@@ -60,6 +60,19 @@ int exit_cb(void)
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+
+/*
+ * Function: to_narrow
+ * Converts a wide character array to a char array for use in C strings
+ *
+ * Parameters:
+ * src  - Pointer to source wchar string
+ * dest - Pointer to destination char string
+ * dest_len - Size of the destination string array.
+ *
+ * Returns:
+ * Number of chars extracted.
+ */
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
     size_t i;
     wchar_t code;
@@ -89,6 +102,17 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+
+/*
+ * Function: FindProcessName
+ * Finds the name of an executable given it's process ID
+ *
+ * Parameters:
+ * processID - PID of the process we are looking for.
+  *
+ * Returns:
+ * Nothing
+ */
 void FindProcessName( DWORD processID)
 {
 	HANDLE hProcessSnap;
@@ -135,6 +159,17 @@ void FindProcessName( DWORD processID)
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+
+/*
+ * Function: FillNetStatGrid
+ * Fills a list with the connection details
+ *
+ * Parameters:
+ * None
+ *
+ * Returns:
+ * Status code
+ */
 int FillNetStatGrid()
 {
     // Declare and initialize variables
@@ -302,6 +337,18 @@ int FillNetStatGrid()
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+
+
+/*
+ * Function: ReverseDNSLookup
+ * Tries to do a reverse lookup on the passed IP address
+ *
+ * Parameters:
+ * IP - String containing the remote IP address
+ *
+ * Returns:
+ * Status code
+ */
 int ReverseDNSLookup(char* IP)
 {
     DWORD dwRetval;
@@ -340,6 +387,16 @@ int ReverseDNSLookup(char* IP)
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: Initialise Winsock
+ * Initialise then Winsock library.
+ *
+ * Parameters:
+ * Nothing
+ *
+ * Returns:
+ * Status Code
+ */
 int InitialiseWinsock()
 {
     WSADATA wsaData = { 0 };
@@ -355,6 +412,18 @@ int InitialiseWinsock()
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+
+/*
+ * Function: main
+ * The programs main entry point
+ *
+ * Parameters:
+ * argc - Number of command line arguments.
+ * argv - Array of command line strings.
+ *
+ * Returns:
+ * Status Code
+ */
 int main(int argc, char* argv[])
 {
     Ihandle* iDialog;
@@ -428,7 +497,7 @@ int main(int argc, char* argv[])
 
     // Initialise dialog control layout
     iVbox = IupVbox(
-        toolbar_hb,
+        // toolbar_hb,
         iGrid,
         iStatusbar,
         NULL);
