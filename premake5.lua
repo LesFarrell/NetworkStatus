@@ -20,7 +20,8 @@ project "Netstat"
     
     files   {
             "./src/**.h",
-            "./src/**.c"
+            "./src/**.c",
+            "./src/**.rc"
             }
 
    -- removefiles { "./Unwanted1.c", "./Unwanted2.c" }
