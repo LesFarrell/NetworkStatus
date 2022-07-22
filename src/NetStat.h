@@ -5,14 +5,18 @@
 
 // Function protypes.
 int FillNetStatGrid();
-void FindProcessName( DWORD processID);
-int ReverseDNSLookup(char* IP);
+void FindProcessName( DWORD processID, char *szProcessName);
+int ReverseDNSLookup(char* IP, int version, int* DNSDONE);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
-int FilterEntry(PMIB_TCPTABLE2 pTcpTable2, int ientry);
+int FilterEntryV4(PMIB_TCPTABLE2 pTcpTable2, int ientry);
+int FilterEntryV6(PMIB_TCP6TABLE2 pTcpTable2, int ientry);
 void loadSettings(void);
 void saveSettings(void);
-
+const char* GetPortDscription(int port);
+int GetConnections(void);
+int GetV6Connections(void);
+int GetV6Connections(void);
 void cb_mnuAboutBox(void);
 int cb_Timer(Ihandle* ih);
 void cb_mnuSettings(void);
@@ -34,51 +38,92 @@ typedef struct configuration
 {
     int HideLocalConections;
     int DisableDNSLookup;
+    int ShowPortDescriptions;
 } configuration;
 configuration config;
 
 typedef struct KeyValue
 {
-    char* key;
+    int key;
     char* value;
 } KeyValue;
 
 
 const KeyValue PortDescriptions[] = {
-    {"7", "ECHO"},
-    {"20","FTP"},
-    {"21", "FTP"},
-    {"22", "SSH"},
-    {"23", "TELNET"},
-    {"25", "SMTP"},
-    {"43", "WHOIS"},
-    {"53", "DNS"},
-    {"79", "FINGER"},
-    {"80", "HTTP"},
-    { "107", "RTELNET"},
-    {"110", "POP3"},
-    {"119", "NNTP"},
-    {"123", "NTP"},
-    {"137", "NETBIOS"},
-    {"143", "IMAP"},
-    {"152", "IMAP"},
-    {"443", "HTTPS"},
-    {"444", "SNPP"},
-    {"445", "SMB"},
-    {"502", "MODBUS"},
-    {"530", "RPC"},
-    {"554", "RTSP"},
-    {"563", "NNTP"},
-    {"587", "SMTP"},
-    {"631", "IPP"},
-    {"647", "DHCP"},
-    {"802", "MODBUS"},
-    {"1029", "DCOM"},
-    {"1080", "SOCKS"},
-    {"1194", "OPENVPN"},
-    {"1234", "VLC"},
-    {"1883", "MQTT"},
-    {"3306", "MYSQL"},
-    {"3301", "SAP"}
+    {0,""},
+    {7, "(ECHO)"},
+    {17, "(QOTD)"},
+    {20,"(FTP)"},
+    {21, "(FTP)"},
+    {22, "(SSH)"},
+    {23, "(TELNET)"},
+    {25, "(SMTP)"},
+    {42, "(WINS)"},
+    {43, "(WHOIS)"},
+    {53, "(DNS)"},
+    {69, "(TFTP)"},
+    {79, "(FINGER)"},
+    {80, "(HTTP)"},
+    {107, "(RTELNET)"},
+    {110, "(POP3)"},
+    {119, "(NNTP)"},
+    {123, "(NTP)"},
+    {135, "(RPC)"},
+    {137, "(NETBIOS)"},
+    {138, "(NETBIOS)"},
+    {139, "(NETBIOS)"},
+    {143, "(IMAP)"},
+    {152, "(IMAP)"},
+    {161, "(SNMP)"},
+    {162, "(SNMP)"},
+    {389, "(LDAP)"},
+    {443, "(HTTPS)"},
+    {444, "(SNPP)"},
+    {445, "(SMB)"},
+    {502, "(MODBUS)"},
+    {520, "(RIP)"},
+    {530, "(RPC)"},
+    {531, "(IRC)"},
+    {546, "(DCHP)"},
+    {547, "(DCHP)"},
+    {554, "(RTSP)"},
+    {563, "(NNTP)"},
+    {564, "(ORACLE)"},
+    {587, "(SMTP)"},
+    {631, "(IPP)"},
+    {636, "(LDAPS)"},
+    {639, "(MSDP)"},
+    {647, "(DHCP)"},
+    {802, "(MODBUS)"},
+    {853, "(DNS/TLS)"},
+    {1026, "(DCOM)"},
+    {1029, "(DCOM)"},
+    {1080, "(SOCKS)"},
+    {1194, "(OPENVPN)"},
+    {1234, "(VLC)"},
+    {1883, "(MQTT)"},
+    {2732, "(STEAM)"},
+    {3306, "(MYSQL)"},
+    {3301, "(SAP)"},
+    {5000, "(UPNP)"},
+    {5800, "(VNC)"},
+    {5900, "(VNC)"},
+    {8080, "(HTTP)"},
 };
+
+typedef struct ConnectionData{
+    char Process[MAX_PATH];
+    char PID[MAX_PATH];
+    char LocalAddress[MAX_PATH];
+    char LocalPort[MAX_PATH];
+    char RemoteAddress[MAX_PATH];
+    char RemotePort[MAX_PATH];
+    char ReverseDNS[MAX_PATH];
+    char ConnectionStatus[MAX_PATH];
+    char ConnectionType[MAX_PATH];
+} ConnectionData;
+
+
+
+
 #endif
