@@ -79,12 +79,18 @@ filter "configurations:Debug"
                 "_WINSOCK_DEPRECATED_NO_WARNINGS"
                 }
         symbols "On"
+        staticruntime "on"
+        runtime "Debug"
+        linkoptions {  }
 
 
 filter "configurations:Release"
         kind "WindowedApp"
         defines { "NDEBUG",
-                "_WINSOCK_DEPRECATED_NO_WARNINGS"
+                "_WINSOCK_DEPRECATED_NO_WARNINGS",
                 }
         optimize "Full"
         symbols "Off"
+        staticruntime "on"
+        runtime "Release"
+        linkoptions { }

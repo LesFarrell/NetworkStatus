@@ -92,47 +92,46 @@ int GetV6Connections(void)
                         strcat_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, "*");
                     }
 
-
                     switch (pTcpTable->table[i].State) {
-                    case MIB_TCP_STATE_CLOSED:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSED");
-                        break;
-                    case MIB_TCP_STATE_LISTEN:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "LISTEN");
-                        break;
-                    case MIB_TCP_STATE_SYN_SENT:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "SYN-SENT");
-                        break;
-                    case MIB_TCP_STATE_SYN_RCVD:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "SYN-RECEIVED");
-                        break;
-                    case MIB_TCP_STATE_ESTAB:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "ESTABLISHED");
-                        break;
-                    case MIB_TCP_STATE_FIN_WAIT1:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "FIN-WAIT-1");
-                        break;
-                    case MIB_TCP_STATE_FIN_WAIT2:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "FIN-WAIT-2");
-                        break;
-                    case MIB_TCP_STATE_CLOSE_WAIT:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSE-WAIT");
-                        break;
-                    case MIB_TCP_STATE_CLOSING:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSING");
-                        break;
-                    case MIB_TCP_STATE_LAST_ACK:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "LAST-ACK");
-                        break;
-                    case MIB_TCP_STATE_TIME_WAIT:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "TIME-WAIT");
-                        break;
-                    case MIB_TCP_STATE_DELETE_TCB:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "DELETE-TCB");
-                        break;
-                    default:
-                        sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "UNKNOWN");
-                        break;
+                        case MIB_TCP_STATE_CLOSED:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSED");
+                            break;
+                        case MIB_TCP_STATE_LISTEN:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "LISTEN");
+                            break;
+                        case MIB_TCP_STATE_SYN_SENT:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "SYN-SENT");
+                            break;
+                        case MIB_TCP_STATE_SYN_RCVD:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "SYN-RECEIVED");
+                            break;
+                        case MIB_TCP_STATE_ESTAB:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "ESTABLISHED");
+                            break;
+                        case MIB_TCP_STATE_FIN_WAIT1:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "FIN-WAIT-1");
+                            break;
+                        case MIB_TCP_STATE_FIN_WAIT2:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "FIN-WAIT-2");
+                            break;
+                        case MIB_TCP_STATE_CLOSE_WAIT:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSE-WAIT");
+                            break;
+                        case MIB_TCP_STATE_CLOSING:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "CLOSING");
+                            break;
+                        case MIB_TCP_STATE_LAST_ACK:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "LAST-ACK");
+                            break;
+                        case MIB_TCP_STATE_TIME_WAIT:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "TIME-WAIT");
+                            break;
+                        case MIB_TCP_STATE_DELETE_TCB:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "DELETE-TCB");
+                            break;
+                        default:
+                            sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionStatus, sizeof(ConnectionDetails[NumberOfConnections].ConnectionStatus) - 1, "%s", "UNKNOWN");
+                            break;
                     }
 
                     FindProcessName((DWORD)pTcpTable->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
@@ -145,15 +144,10 @@ int GetV6Connections(void)
                     {
                         to_narrow(ipstringbuffer, buffer, sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].LocalAddress, sizeof(ConnectionDetails[NumberOfConnections].LocalAddress) - 1, "%s", buffer);
-                    }
-                    //wprintf(L"\tTCP[%d] Local Scope ID: %d \n", i, ntohl(pTcpTable->table[i].dwLocalScopeId));
+                    }                    
                     sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1,"%d", ntohs((u_short)pTcpTable->table[i].dwLocalPort));
                     
-                    if (InetNtop(AF_INET6, &pTcpTable->table[i].RemoteAddr, ipstringbuffer, 46) == NULL)
-                    {
-                        //printf(L"  InetNtop function failed for remote IPv6 address\n");
-                    }
-                    else
+                    if (InetNtop(AF_INET6, &pTcpTable->table[i].RemoteAddr, ipstringbuffer, 46) != NULL)
                     {
                         to_narrow(ipstringbuffer, buffer,sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].RemoteAddress, sizeof(ConnectionDetails[NumberOfConnections].RemoteAddress) - 1, "%s", buffer);
@@ -180,7 +174,7 @@ int GetV6Connections(void)
     
 }
 
-int GetConnections(void)
+int GetV4Connections(void)
 {
     // Declare and initialize variables.
     PMIB_TCPTABLE2 pTcpTable2;
@@ -220,6 +214,18 @@ int GetConnections(void)
             if (FilterEntryV4(pTcpTable2, i) == 0) {
                 ConnectionDetails = (ConnectionData *) realloc (ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
 
+
+                ConnectionDetails[NumberOfConnections].Process[0] = '\0';
+                ConnectionDetails[NumberOfConnections].PID[0] = '\0';
+                ConnectionDetails[NumberOfConnections].LocalAddress[0] = '\0';
+                ConnectionDetails[NumberOfConnections].LocalPort[0] = '\0';
+                ConnectionDetails[NumberOfConnections].RemoteAddress[0] = '\0';
+                ConnectionDetails[NumberOfConnections].RemotePort[0] = '\0';
+                ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
+                ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
+                ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
+
+
                 // Process Name.
                 FindProcessName((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
 
@@ -241,7 +247,7 @@ int GetConnections(void)
                 sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1,"%d ", ntohs((u_short)pTcpTable2->table[i].dwRemotePort));
                 if (config.ShowPortDescriptions == 1)
                 {
-                    strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDscription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
+                    strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
                 }
                 
 
@@ -317,15 +323,12 @@ int GetConnections(void)
         pTcpTable2 = NULL;
     }
 
-    sprintf_s(sStatusBarText,sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
-    if (config.DisableDNSLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (* Reverse DNS Disabled)");
-    IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
     return 0;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-const char* GetPortDscription(int port) {    
+const char* GetPortDescription(int port) {    
     int Start = 0;
     int MID = 0;
     int low = 0;
@@ -555,9 +558,7 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 int FillNetStatGrid() {
     NumberOfConnections = 0;
 
-
-
-    // GetConnections();
+    // GetV4Connections();
     GetV6Connections();
 
 
@@ -579,6 +580,12 @@ int FillNetStatGrid() {
     }
     // Force a grid redraw.
     IupSetAttribute(iGrid, "REDRAW", "ALL");
+
+
+    sprintf_s(sStatusBarText, sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
+    if (config.DisableDNSLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (* Reverse DNS Disabled)");
+    IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
+
     return 0;
 }
 
