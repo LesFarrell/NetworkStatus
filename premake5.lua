@@ -81,7 +81,6 @@ filter "configurations:Debug"
         symbols "On"
         staticruntime "on"
         runtime "Debug"
-        linkoptions {  }
 
 
 filter "configurations:Release"
@@ -93,4 +92,3 @@ filter "configurations:Release"
         symbols "Off"
         staticruntime "on"
         runtime "Release"
-        linkoptions { }

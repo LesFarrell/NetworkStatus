@@ -9,8 +9,6 @@ void FindProcessName( DWORD processID, char *szProcessName);
 int ReverseDNSLookup(char* IP, int version, int* DNSDONE);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
-int FilterEntryV4(PMIB_TCPTABLE2 pTcpTable2, int ientry);
-int FilterEntryV6(PMIB_TCP6TABLE2 pTcpTable2, int ientry);
 void loadSettings(void);
 void saveSettings(void);
 const char* GetPortDescription(int port);
@@ -23,7 +21,8 @@ void cb_mnuSettings(void);
 int cb_mnuExit(void);
 int cb_EnterCell(Ihandle* ih, int lin, int col);
 int cb_LeaveCell(Ihandle* ih, int lin, int col);
-
+int FilterEntryV4(MIB_TCPTABLE2* pTcpTable2, int idx);
+int FilterEntryV6(MIB_TCP6TABLE2* pTcpTable, int idx);
 
 // Hash structure for saving hostnames.
 struct  hostname_struct{
@@ -34,20 +33,20 @@ struct  hostname_struct{
 struct hostname_struct *reverseDNS_Hash = NULL, *DNS_Result = NULL;
 char hostname[NI_MAXHOST] = { '\0' };
 
-typedef struct configuration
-{
+typedef struct configuration {
     int HideLocalConections;
     int DisableDNSLookup;
     int ShowPortDescriptions;
+    char PortFilter[1024];
 } configuration;
 configuration config;
+
 
 typedef struct KeyValue
 {
     int key;
     char* value;
 } KeyValue;
-
 
 const KeyValue PortDescriptions[] = {
     {0,""},
@@ -122,8 +121,5 @@ typedef struct ConnectionData{
     char ConnectionStatus[MAX_PATH];
     char ConnectionType[MAX_PATH];
 } ConnectionData;
-
-
-
 
 #endif

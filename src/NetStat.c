@@ -13,23 +13,119 @@
 #include "netstat.h"
 #include "uthash.h"
 
+// Global Variables
+Ihandle *iStatusbar;                        // StatusBar handle.
+Ihandle *iGrid;                             // Matrix handle.
+Ihandle *iconfig;                           // Applications configuration handle.
+char sStatusBarText[256];                   // Holds the contents of the statusbar text.
+ConnectionData* ConnectionDetails = NULL;   // Array of filtered connection details.
+int NumberOfConnections = 0;                // Number of entries in connection details array.
 
-// Globals.
-char sStatusBarText[256];
-Ihandle *iStatusbar;
-Ihandle *iGrid;
-Ihandle *iconfig;
 
-/* Note: could also use malloc() and free() */
+// Note: could also use malloc() and free()
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define CALLOC(x) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (x))
-#define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
+#define FREE(x)   HeapFree(GetProcessHeap(), 0, (x))
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+/*
+ * Function: FilterEntryV4
+ * Tests to see if the entry should be filtered.
+ *
+ * Parameters:
+ * MIB_TCPTABLE2 *pTcpTable2 - Table containing the connection details.
+ * int idx  - Entry in the table we are testings.
+ *
+ * Returns:
+ * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
+ *
+ */
+int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
+{    
+    char RemoteAddress[256] = { '\0' };
+    char LocalAddress[256] = { '\0' };
+    struct in_addr IpAddr;
+
+    if (config.HideLocalConections == 1) {
+
+        IpAddr.S_un.S_addr = (u_long) pTcpTable2->table[idx].dwLocalAddr;
+        strcpy_s(LocalAddress, sizeof(LocalAddress) - 1, inet_ntoa(IpAddr));
+
+        IpAddr.S_un.S_addr = (u_long) pTcpTable2->table[idx].dwRemoteAddr;
+        strcpy_s(RemoteAddress, sizeof(RemoteAddress) - 1, inet_ntoa(IpAddr));        
+
+        if (strstr(LocalAddress, "0.0.0.0") != NULL || strstr(LocalAddress, "127.0.0.1") != NULL) {
+            return 1;
+        }
+
+        if (strstr(RemoteAddress, "0.0.0.0") !=NULL || strstr(RemoteAddress, "127.0.0.1") != NULL) {
+            return 1;
+        }        
+    }
+    return 0;
+}
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+/*
+ * Function: FilterEntryV6
+ * Tests to see if the entry should be filtered.
+ *
+ * Parameters:
+ * MIB_TCP6TABLE2 *pTcpTable - Table containing the connection details.
+ * int idx  - Entry in the table we are testings.
+ *
+ * Returns:
+ * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
+ *
+ */
+int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
+{
+    wchar_t ipstringbuffer[46];
+    char RemoteAddress[256] = { '\0' };
+    char LocalAddress[256] = { '\0' };
 
 
-ConnectionData *ConnectionDetails = NULL;
-int NumberOfConnections = 0;
+    if (config.HideLocalConections == 1) {
 
+        if (InetNtop(AF_INET6, &pTcpTable->table[idx].LocalAddr, ipstringbuffer, 46) != NULL)
+        {
+            to_narrow(ipstringbuffer, LocalAddress, sizeof(LocalAddress) - 1);
+        }
 
+        if (InetNtop(AF_INET6, &pTcpTable->table[idx].RemoteAddr, ipstringbuffer, 46) != NULL)
+        {
+            to_narrow(ipstringbuffer, RemoteAddress, sizeof(RemoteAddress) - 1);
+        }
+                
+        if (strstr(LocalAddress, "::") != NULL || strstr(LocalAddress, "::1") != NULL) {
+            return 1;
+        }
+
+        if (strstr(RemoteAddress, "::") != NULL || strstr(RemoteAddress, "::1") != NULL) {
+            return 1;
+        }
+    }   
+    return 0;
+}
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+/*
+ * Function: GetV6Connections
+ * Get and fill the connection details with IPv6 details.
+ *
+ * Parameters:
+ * void.
+ *
+ * Returns:
+ * 0 = Function successful. 1 = Error Occurred.
+ *
+ * Notes:
+ * Fills ConnectionDetails will the details on the IPv4 connections.
+ * 
+ */
 int GetV6Connections(void)
 {
         // Declare and initialize variables
@@ -54,20 +150,17 @@ int GetV6Connections(void)
             FREE(pTcpTable);
             pTcpTable = (MIB_TCP6TABLE2*)MALLOC(dwSize);
             if (pTcpTable == NULL) {
-                wprintf(L"Error allocating memory\n");
+                printf("Error allocating memory\n");
                 return 1;
             }
         }
         // Make a second call to GetTcp6Table to get the actual data we require
         if ((dwRetVal = GetTcp6Table2(pTcpTable, &dwSize, TRUE)) == NO_ERROR) {
-            
             for (i = 0; i < (int)pTcpTable->dwNumEntries; i++) 
             {
                 if (FilterEntryV6(pTcpTable, i) == 0) 
                 {
-
-                    ConnectionDetails = (ConnectionData*)realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
-                    
+                    ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
                     ConnectionDetails[NumberOfConnections].Process[0] = '\0';
                     ConnectionDetails[NumberOfConnections].PID[0] = '\0';
                     ConnectionDetails[NumberOfConnections].LocalAddress[0] = '\0';
@@ -77,7 +170,7 @@ int GetV6Connections(void)
                     ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
                     ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
                     ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
-                
+                    hostname[0] = '\0';
 
                     sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionType, sizeof(ConnectionDetails[NumberOfConnections].ConnectionType) - 1, "IPv6");
 
@@ -169,11 +262,25 @@ int GetV6Connections(void)
             FREE(pTcpTable);
             pTcpTable = NULL;
         }
-
-        return 0;
-    
+        return 0;    
 }
 
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+/*
+ * Function: GetV4Connections
+ * Get and process the IPv4 connection list.
+ *
+ * Parameters:
+ * void.
+ *
+ * Returns:
+ * 0 = No Errors, 1 = Error Occurred.
+ * 
+ * Notes:
+ * Fills ConnectionDetails will the details on the IPv4 connections.
+ * 
+ */
 int GetV4Connections(void)
 {
     // Declare and initialize variables.
@@ -207,14 +314,11 @@ int GetV4Connections(void)
     }
 
     // Make a second call to GetTcpTable to get the actual data we require.
-    if ((dwRetVal = GetTcpTable2(pTcpTable2, &ulSize, TRUE)) == NO_ERROR) {        
-        
+    if ((dwRetVal = GetTcpTable2(pTcpTable2, &ulSize, TRUE)) == NO_ERROR) {                
         for (i = 0; i < (int)pTcpTable2->dwNumEntries; i++) {
-
-            if (FilterEntryV4(pTcpTable2, i) == 0) {
+            if (FilterEntryV4(pTcpTable2, i) == 0) 
+            {
                 ConnectionDetails = (ConnectionData *) realloc (ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
-
-
                 ConnectionDetails[NumberOfConnections].Process[0] = '\0';
                 ConnectionDetails[NumberOfConnections].PID[0] = '\0';
                 ConnectionDetails[NumberOfConnections].LocalAddress[0] = '\0';
@@ -224,7 +328,7 @@ int GetV4Connections(void)
                 ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
                 ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
                 ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
-
+                hostname[0] = '\0';
 
                 // Process Name.
                 FindProcessName((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
@@ -249,7 +353,6 @@ int GetV4Connections(void)
                 {
                     strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
                 }
-                
 
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
                 if (config.DisableDNSLookup == 0 && DNSDONE == 0)
@@ -322,51 +425,83 @@ int GetV4Connections(void)
         FREE(pTcpTable2);
         pTcpTable2 = NULL;
     }
-
     return 0;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-const char* GetPortDescription(int port) {    
-    int Start = 0;
-    int MID = 0;
+/*
+ * Function: GetPortDescription
+ * Search the Port Descriptions and match the port number with it's description.
+ *
+ * Parameters:
+ * int port - Port number to look up.
+ *
+ * Returns:
+ * const char * Ports Description.
+ *
+ */
+const char* GetPortDescription(int port) {
     int low = 0;
-    int high = 35 - 1;
+    int high = 59;
     int median = 0;    
 
     // Do a Binary search on the port description array.
-    do
-    {
+    do {
         median = (low + high) / 2;
-        if (port < PortDescriptions[median].key) 
-        {
+        if (port < PortDescriptions[median].key) {
             high = median - 1;
         }
-        else
-        {
+        else {
             low = median + 1;
         }
     } while ((port != PortDescriptions[median].key) && low <= high);
 
     if (port ==  PortDescriptions[median].key) {
         return PortDescriptions[median].value;
-    }
-    else {
+    } else {
         return PortDescriptions[0].value;
     }
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: cb_EnterCell
+ * Called when the focus enters a cell.
+ *
+ * Parameters:
+ * Ihandle* ih  - Handle to the control.
+ * int lin      - Current Cell Line.
+ * int col      - Current Cell Column.
+ *
+ * Returns:
+ * IUP_DEFAULT
+ *
+ */
 int cb_EnterCell(Ihandle* ih, int lin, int col) {
+    // Mark the selected line in the matrix.
     IupSetAttributeId2(ih, "MARK", lin, 0, "1");
     return IUP_DEFAULT;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: cb_LeaveCell
+ * Called when the focus leaves a cell.
+ *
+ * Parameters:
+ * Ihandle* ih  - Handle to the control.
+ * int lin      - Current Cell Line.
+ * int col      - Current Cell Column.
+ *
+ * Returns:
+ * IUP_DEFAULT
+ *
+ */
 int cb_LeaveCell(Ihandle* ih, int lin, int col) {
+    // Unmark the selected line in the matrix.
     IupSetAttributeId2(ih, "MARK", lin, 0, "0");
     return IUP_DEFAULT;
 }
@@ -382,6 +517,7 @@ int cb_LeaveCell(Ihandle* ih, int lin, int col) {
  *
  * Returns:
  * void.
+ * 
  */
 void cb_mnuAboutBox(void) {
     char buffer[2048];
@@ -394,17 +530,41 @@ void cb_mnuAboutBox(void) {
     strcat_s(buffer, sizeof(buffer) - 1, " on ");
     strcat_s(buffer, sizeof(buffer) - 1, __DATE__);
     IupMessage("About", buffer);
+    return;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: cb_Timer
+ * Call back function for the IUP timer.
+ *
+ * Parameters:
+ * Ihandle *ih - Control handle.
+ *
+ * Returns:
+ * IUP_DEFAULT
+ *
+ */
 int cb_Timer(Ihandle *ih) {
-  FillNetStatGrid();
-  return IUP_DEFAULT;
+    // Fill the grid with connection details.
+    FillNetStatGrid();
+    return IUP_DEFAULT;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: cb_mnuExit
+ * Tells IUP to close down.
+ *
+ * Parameters:
+ * void.
+ *
+ * Returns:
+ * IUP_CLOSE
+ *
+ */
 int cb_mnuExit(void) {
   return IUP_CLOSE;
 }
@@ -412,18 +572,18 @@ int cb_mnuExit(void) {
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 /*
- * Function: mnuSettings_cb
+ * Function: cb_mnuSettings
  * Show the settings dialog and apply the settings
  *
  * Parameters:
- * None.
+ *  void
  *
  * Returns:
- * void.
+ *  void
  */
 void cb_mnuSettings(void) {
     int result;
-
+   
     loadSettings();
 
     // Build up the dialog and show it.
@@ -431,30 +591,61 @@ void cb_mnuSettings(void) {
         "Hide connections to 127.0.0.0 / 0.0.0.0 : %b\n"
         "Disable Reverse DNS Lookup : %b\n"
         "Show Port Descriptions : %b\n"
-        , &config.HideLocalConections, &config.DisableDNSLookup, &config.ShowPortDescriptions);
+        "Filter on Ports (Seperated by commas) : %s\n",
+        
+        &config.HideLocalConections,
+        &config.DisableDNSLookup, 
+        &config.ShowPortDescriptions, 
+        &config.PortFilter
+    );
+    
+    // Okay was pressed the save the settings.
     if (result == 1) {
         saveSettings();
     }
-
     return;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: loadSettings
+ * Load the settings from the configuration file.
+ *
+ * Parameters:
+ *  void.
+ *
+ * Returns:
+ *  void.
+ *
+ */
 void loadSettings(void) {
     // Read the current settings.
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableDNSLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
-    config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 1);
+    config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 1);       
+    strcpy_s(config.PortFilter,sizeof(config.PortFilter), IupConfigGetVariableStr(iconfig, "NetStat", "PortFilter"));
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*
+ * Function: saveSettings
+ * Save the applications settings to the configuration file.
+ *
+ * Parameters:
+ *  void.
+ *
+ * Returns:
+ *  void.
+ *
+ */
 void saveSettings(void) {
     // Save the updated settings.
     IupConfigSetVariableInt(iconfig, "NetStat", "HideLocal", config.HideLocalConections);
     IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableDNSLookup);
     IupConfigSetVariableInt(iconfig, "NetStat", "ShowPortDescriptions", config.ShowPortDescriptions);
+    IupConfigSetVariableStr(iconfig, "NetStat", "PortFilter", config.PortFilter);
     IupConfigSave(iconfig);
 }
 
@@ -470,7 +661,8 @@ void saveSettings(void) {
  * dest_len - Size of the destination string array.
  *
  * Returns:
- * Number of chars extracted from the wide char string.
+ *  Number of chars extracted from the wide char string.
+ * 
  */
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
     size_t i = 0;
@@ -482,6 +674,7 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
             dest[i] = (char) code;
         else {
             dest[i] = '?';
+
             // lead surrogate, skip the next code unit, which is the trail
             if (code >= 0xD800 && code <= 0xD8FF) {                
                 i++;
@@ -497,13 +690,14 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
 
 /*
  * Function: FindProcessName
- * Finds the name of an executable given it's process ID
+ * Finds the name of an executable given it's process ID.
  *
  * Parameters:
  * processID - PID of the process we are looking for.
  *
  * Returns:
- * void
+ *  Fills 'szProcessName' with the executables name.
+ * 
  */
 void FindProcessName( DWORD processID, char* szProcessName) {
 	HANDLE hProcessSnap;
@@ -547,20 +741,23 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 
 /*
  * Function: FillNetStatGrid
- * Fills a list with the connection details
+ * Fills a list with the connection details.
  *
  * Parameters:
  * None
  *
  * Returns:
- * Status code
+ *  Status code
+ * 
  */
 int FillNetStatGrid() {
     NumberOfConnections = 0;
 
-    // GetV4Connections();
-    GetV6Connections();
+    // Grab the IPv4 connections
+    GetV4Connections();
 
+    // Grab the IPv6 connections
+    GetV6Connections();
 
     // Set the number of visible lines in the grid
     IupSetInt(iGrid, "NUMLIN", NumberOfConnections);
@@ -581,7 +778,7 @@ int FillNetStatGrid() {
     // Force a grid redraw.
     IupSetAttribute(iGrid, "REDRAW", "ALL");
 
-
+    // Update the applications statusbar text.
     sprintf_s(sStatusBarText, sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
     if (config.DisableDNSLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (* Reverse DNS Disabled)");
     IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
@@ -599,7 +796,8 @@ int FillNetStatGrid() {
  * IP - String containing the remote IP address.
  *
  * Returns:
- * Status code
+ *  Status code
+ * 
  */
 int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
     DWORD dwRetval;
@@ -614,9 +812,6 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
     if (!DNS_Result) {
         *DNSDONE = 1;
 
-        
-        
-
         // Call getnameinfo.
 
         //IPv4
@@ -629,19 +824,17 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
             dwRetval = getnameinfo((struct sockaddr*)&saGNI, sizeof(struct sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
         }
         else
-        {
-            
+        {            
             //IPv6
 
-            // Set up sockaddr_in structure which is passed to the getnameinfo function.
-            
+            // Set up sockaddr_in structure which is passed to the getnameinfo function.           
             saGNI6.sin6_family = AF_INET;
-            //FIXME
-            memcpy(saGNI6.sin6_addr.s6_addr, (char*) IP, sizeof( IP));            
-            //saGNI6.sin6_addr = inet_addr(IP);
+
+            // IPv6 string to sockaddr_in6.
+            inet_pton(AF_INET6, IP, &(saGNI6.sin6_addr));
+
             saGNI6.sin6_port = htons(port);
-            dwRetval = getnameinfo((struct sockaddr*)&saGNI6, sizeof(struct sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
-            //strcpy_s(hostname, sizeof(hostname) - 1, "");
+            dwRetval = getnameinfo((struct sockaddr*)&saGNI6, sizeof(struct sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);            
         }
         if (dwRetval != 0) {
             printf("getnameinfo failed with error # %ld\n", WSAGetLastError());
@@ -666,13 +859,14 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
 
 /*
  * Function: Initialise Winsock
- * Initialise then Winsock library.
+ * Initialise the Winsock library.
  *
  * Parameters:
- * Nothing
+ * Nothing.
  *
  * Returns:
- * Status Code
+ *  1 = Failed to intialise WinSock, otherwise returns 0.
+ * 
  */
 int InitialiseWinsock() {
     WSADATA wsaData = { 0 };
@@ -689,72 +883,6 @@ int InitialiseWinsock() {
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 /*
- * Function: FilterEntry
- * Checks to see if we should show the passed entry in the grid or not
- *
- * Parameters:
- * PMIB_TCPTABLE2  - Array of the TCP/IP results.
- * ientry - The entry in the array to check.
- *
- * Returns:
- * 1 = Don't show the entry, 0 = Okay to show.
- */
-int FilterEntryV4(PMIB_TCPTABLE2 pTcpTable2, int ientry)
-{
-    struct in_addr IpAddr;    
-    char szLocalAddr[128] = { '\0' };
-    char szRemoteAddr[128] = { '\0' };
-
-    if (config.HideLocalConections == 1)
-    {
-        // Filter Local Addresses.
-        IpAddr.S_un.S_addr = (u_long)pTcpTable2->table[ientry].dwLocalAddr;
-        strcpy_s(szLocalAddr, sizeof(szLocalAddr) - 1, inet_ntoa(IpAddr));     
-        if (strstr(szLocalAddr,"0.0.0.0") != NULL || strstr(szLocalAddr,"127.0.0.1") != NULL) {
-            return 1;
-        }
-
-        // Filter Remote Addresses.
-        IpAddr.S_un.S_addr = (u_long)pTcpTable2->table[ientry].dwRemoteAddr;
-        strcpy_s(szRemoteAddr, sizeof(szRemoteAddr) - 1, inet_ntoa(IpAddr));
-        if (strstr(szRemoteAddr, "0.0.0.0") != NULL || strstr(szRemoteAddr, "127.0.0.1") != NULL) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-
-int FilterEntryV6(PMIB_TCP6TABLE2 pTcp6Table2, int ientry)
-{
-    struct in_addr IpAddr;
-    char szLocalAddr[128] = { '\0' };
-    char szRemoteAddr[128] = { '\0' };
-
-    // FIXME
-    if (config.HideLocalConections == 1)
-    {     
-        // Filter Local Addresses.
-        // InetNtop(AF_INET6, pTcp6Table2.table[ientry].LocalAddr, szLocalAddr, 46);
-        if (strstr(szLocalAddr, "0.0.0.0") != NULL || strstr(szLocalAddr, "127.0.0.1") != NULL) {
-            return 1;
-        }
-
-        // Filter Remote Addresses.
-        // InetNtop(AF_INET6, pTcp6Table2->table[ientry].RemoteAddr, szRemoteAddr, 46);
-        if (strstr(szRemoteAddr, "0.0.0.0") != NULL || strstr(szRemoteAddr, "127.0.0.1") != NULL) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-
-
-
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-
-/*
  * Function: main
  * The programs main entry point.
  *
@@ -764,6 +892,7 @@ int FilterEntryV6(PMIB_TCP6TABLE2 pTcp6Table2, int ientry)
  *
  * Returns:
  * Status Code
+ * 
  */
 int main(int argc, char* argv[]) {
     Ihandle *iDialog;
@@ -775,13 +904,13 @@ int main(int argc, char* argv[]) {
     Ihandle *optionsub_menu;
     Ihandle *item_about;
     Ihandle *help_menu, *helpsub_menu;
-    Ihandle *item_quickFilter, *item_quickFilterPortHTTP, *item_quickFilterPortHTTPS;
     
     struct hostname_struct* tmpDNS = NULL;
 
-    // Initialise IUP.
+    // Initialise the IUP toolkit.
     if (IupOpen(&argc, &argv) == IUP_ERROR) return 0;
 
+    // Stop the Not Responding Message.
     IupSetGlobal("PROCESSWINDOWSGHOSTING", "NO");
 
     // Initialise IUP Controls.
@@ -798,13 +927,9 @@ int main(int argc, char* argv[]) {
 
     // Setup the options menu.
     item_settings = IupItem("Settings", NULL);
-    item_quickFilter = IupItem("Quick Filter", NULL);
-    item_quickFilterPortHTTP = IupItem("HTTP (80)", NULL);
-    item_quickFilterPortHTTPS = IupItem("HTTPS (443)", NULL);    
-
 
     IupSetCallback(item_settings, "ACTION", (Icallback)cb_mnuSettings);
-    options_menu = IupMenu(item_settings, item_quickFilter , NULL);
+    options_menu = IupMenu(item_settings, NULL);
     optionsub_menu = IupSubmenu("Options", options_menu);
 
     // Setup the help menu.
@@ -816,8 +941,8 @@ int main(int argc, char* argv[]) {
     // Define the programs main menu.
     menu = IupMenu(filesub_menu, optionsub_menu, helpsub_menu, NULL);
 
-    // Define the Controls.
-    
+    // Define the IUP Controls.
+        
     // Define the status bar.
     iStatusbar = IupLabel("");
     IupSetAttribute(iStatusbar, "PADDING", "10x5");
@@ -897,6 +1022,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iStatusbar, "NAME", "STATUSBAR");
     IupSetAttribute(iStatusbar, "EXPAND", "HORIZONTAL");
     IupSetAttribute(iStatusbar, "PADDING", "10x5");
+    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2020 Les Farrell");
 
     // Initialise Configuration system.
     iconfig = IupConfig();
@@ -925,6 +1051,7 @@ int main(int argc, char* argv[]) {
     // Save the current configuration.
     IupConfigSave(iconfig);
 
+    // Free the connectiondetails array.
     if (ConnectionDetails != NULL) free(ConnectionDetails);
 
     // Free the DNS hash table contents.
@@ -933,7 +1060,7 @@ int main(int argc, char* argv[]) {
         free(DNS_Result);
     }
 
-    // Close down IUP
+    // Close down the IUP toolkit.
     IupClose();
 
     return 0;
