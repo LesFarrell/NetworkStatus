@@ -6,7 +6,7 @@
 // Function protypes.
 int FillNetStatGrid();
 void FindProcessName( DWORD processID, char *szProcessName);
-int ReverseDNSLookup(char* IP, int version, int* DNSDONE);
+int ReverseDNSLookup(char* IP, int version, int* DNSDONE, char* hostname);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
 void loadSettings(void);
@@ -31,7 +31,7 @@ struct  hostname_struct{
     UT_hash_handle hh;
 };
 struct hostname_struct *reverseDNS_Hash = NULL, *DNS_Result = NULL;
-char hostname[NI_MAXHOST] = { '\0' };
+
 
 typedef struct configuration {
     int HideLocalConections;
@@ -107,6 +107,7 @@ const KeyValue PortDescriptions[] = {
     {5000, "(UPNP)"},
     {5800, "(VNC)"},
     {5900, "(VNC)"},
+    {6000, "(X11)"},
     {8080, "(HTTP)"},
 };
 

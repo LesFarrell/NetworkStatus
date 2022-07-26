@@ -29,6 +29,86 @@ int NumberOfConnections = 0;                // Number of entries in connection d
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
+/*---------------------------------------------------------------------------------------
+ * Function: strsplit
+ * Based on a Nice function found on stackoverflow which splits a string into an array .
+ *
+ * Parameters:
+ *          str - Pointer to the string to split *
+ *          c   - The delimiter character
+ *          arr - Pointer to the array to create. (defined a char **array)
+ *
+ * Returns:
+ *          int - The number of items in the created array
+ *
+ * Notes:
+ *          Remember to free the created array once done.
+ *
+ ---------------------------------------------------------------------------------------*/
+int strsplit(char* str, char c, char*** arr)
+{
+    int count = 1;
+    int token_len = 1;
+    int i = 0;
+    char* p;
+    char* t;
+
+    p = str;
+    while (*p != '\0')
+    {
+        if (*p == c)
+            count++;
+        p++;
+    }
+
+    *arr = (char**)malloc(sizeof(char*) * count);
+    if (*arr == NULL)
+        exit(1);
+
+    p = str;
+    while (*p != '\0')
+    {
+        if (*p == c)
+        {
+            (*arr)[i] = (char*)malloc(sizeof(char) * token_len);
+            if ((*arr)[i] == NULL)
+                exit(1);
+
+            token_len = 0;
+            i++;
+        }
+        p++;
+        token_len++;
+    }
+    (*arr)[i] = (char*)malloc(sizeof(char) * token_len);
+    if ((*arr)[i] == NULL)
+        exit(1);
+
+    i = 0;
+    p = str;
+    t = ((*arr)[i]);
+    while (*p != '\0')
+    {
+        if (*p != c && *p != '\0')
+        {
+            *t = *p;
+            t++;
+        }
+        else
+        {
+            *t = '\0';
+            i++;
+            t = ((*arr)[i]);
+        }
+        p++;
+    }
+
+    return count;
+}
+
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
 /*
  * Function: FilterEntryV4
  * Tests to see if the entry should be filtered.
@@ -45,7 +125,13 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
 {    
     char RemoteAddress[256] = { '\0' };
     char LocalAddress[256] = { '\0' };
+    char LocalPort[256] = { '\0' };
+    char RemotePort[256] = { '\0' };
     struct in_addr IpAddr;
+    int numtokens = 0;
+    char **arr = NULL;
+    int retvalue = 0;
+    int i = 0;
 
     if (config.HideLocalConections == 1) {
 
@@ -63,7 +149,39 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
             return 1;
         }        
     }
-    return 0;
+
+    // Split the string and find the num of tokens.
+    if (strlen(config.PortFilter) > 0)
+    {
+        numtokens = strsplit(config.PortFilter, ',', &arr);
+
+        // Check the local ports
+        retvalue = 1;
+
+        for (i = 0; i < numtokens; i++) {
+            printf("Local Port: %d\n", pTcpTable2->table[idx].dwRemotePort);
+            if (atoi(arr[i]) == ntohs((u_short)pTcpTable2->table[idx].dwLocalPort)) {
+                retvalue = 0;
+            }
+        }
+
+        // Check the remote ports
+        for (i = 0; i < numtokens; i++) {            
+            if (atoi(arr[i]) == ntohs((u_short)pTcpTable2->table[idx].dwRemotePort)) {
+                retvalue = 0;
+            }
+        }
+
+        // Free up the memory allocated for each element
+        for (i = numtokens - 1; i >= 0; i--)
+            free(arr[i]);
+
+        // Free the array pointer itself.
+        free(arr);
+    }
+
+    return retvalue;
+
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -85,7 +203,10 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
     wchar_t ipstringbuffer[46];
     char RemoteAddress[256] = { '\0' };
     char LocalAddress[256] = { '\0' };
-
+    int numtokens = 0;
+    char** arr = NULL;
+    int retvalue = 0;
+    int i = 0;
 
     if (config.HideLocalConections == 1) {
 
@@ -98,7 +219,7 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
         {
             to_narrow(ipstringbuffer, RemoteAddress, sizeof(RemoteAddress) - 1);
         }
-                
+
         if (strstr(LocalAddress, "::") != NULL || strstr(LocalAddress, "::1") != NULL) {
             return 1;
         }
@@ -106,8 +227,40 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
         if (strstr(RemoteAddress, "::") != NULL || strstr(RemoteAddress, "::1") != NULL) {
             return 1;
         }
-    }   
-    return 0;
+    }
+
+    // Split the string and find the num of tokens.
+    if (strlen(config.PortFilter) > 0)
+    {
+        numtokens = strsplit(config.PortFilter, ',', &arr);
+
+        // Check the local ports
+        retvalue = 1;
+
+        for (i = 0; i < numtokens; i++) {
+            printf("Local Port: %d\n", pTcpTable->table[idx].dwRemotePort);
+            if (atoi(arr[i]) == ntohs((u_short)pTcpTable->table[idx].dwLocalPort)) {
+                retvalue = 0;
+            }
+        }
+
+        // Check the remote ports
+        for (i = 0; i < numtokens; i++) {
+            if (atoi(arr[i]) == ntohs((u_short)pTcpTable->table[idx].dwRemotePort)) {
+                retvalue = 0;
+            }
+        }
+
+        // Free up the memory allocated for each element
+        for (i = numtokens - 1; i >= 0; i--)
+            free(arr[i]);
+
+        // Free the array pointer itself.
+        free(arr);
+    }
+
+    return retvalue;
+    
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -136,6 +289,7 @@ int GetV6Connections(void)
         wchar_t ipstringbuffer[46];
         int i;
         int DNSDONE = 0;
+        char HostName[NI_MAXHOST] = { '\0' };
 
         pTcpTable = (MIB_TCP6TABLE2*)MALLOC(sizeof(MIB_TCP6TABLE2));
         if (pTcpTable == NULL) {
@@ -154,6 +308,7 @@ int GetV6Connections(void)
                 return 1;
             }
         }
+
         // Make a second call to GetTcp6Table to get the actual data we require
         if ((dwRetVal = GetTcp6Table2(pTcpTable, &dwSize, TRUE)) == NO_ERROR) {
             for (i = 0; i < (int)pTcpTable->dwNumEntries; i++) 
@@ -170,14 +325,14 @@ int GetV6Connections(void)
                     ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
                     ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
                     ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
-                    hostname[0] = '\0';
+                    HostName[0] = '\0';
 
                     sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionType, sizeof(ConnectionDetails[NumberOfConnections].ConnectionType) - 1, "IPv6");
 
                     if (config.DisableDNSLookup == 0 && DNSDONE == 0)
                     {
-                        ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress, 1, &DNSDONE);
-                        strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, hostname);
+                        ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress, 1, &DNSDONE, HostName);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, HostName);
                     }
                     else
                     {
@@ -237,6 +392,11 @@ int GetV6Connections(void)
                     {
                         to_narrow(ipstringbuffer, buffer, sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].LocalAddress, sizeof(ConnectionDetails[NumberOfConnections].LocalAddress) - 1, "%s", buffer);
+                        if (config.ShowPortDescriptions == 1)
+                        {
+                            strcat_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].LocalPort)));
+                        }
+
                     }                    
                     sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1,"%d", ntohs((u_short)pTcpTable->table[i].dwLocalPort));
                     
@@ -244,10 +404,14 @@ int GetV6Connections(void)
                     {
                         to_narrow(ipstringbuffer, buffer,sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].RemoteAddress, sizeof(ConnectionDetails[NumberOfConnections].RemoteAddress) - 1, "%s", buffer);
-                    }
-                    //printf(L"\tTCP[%d] Remote Scope ID: %d \n", i, ntohl(pTcpTable->table[i].dwRemoteScopeId));
+
+                    }                    
                     sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, "%d", ntohs((u_short)pTcpTable->table[i].dwRemotePort));
-    
+                    if (config.ShowPortDescriptions == 1)
+                    {
+                        strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
+                    }
+
                     NumberOfConnections++;
                 }
             }
@@ -294,6 +458,7 @@ int GetV4Connections(void)
     char buffer[256] = { '\0' };
     int i = 0;
     int DNSDONE = 0;
+    char HostName[NI_MAXHOST] = { '\0' };
    
     pTcpTable2 = (MIB_TCPTABLE2*)MALLOC(sizeof(MIB_TCPTABLE2));
     if (pTcpTable2 == NULL) {
@@ -328,8 +493,8 @@ int GetV4Connections(void)
                 ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
                 ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
                 ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
-                hostname[0] = '\0';
-
+                
+                
                 // Process Name.
                 FindProcessName((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
 
@@ -342,7 +507,11 @@ int GetV4Connections(void)
                 
                 // Local port.
                 sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, "%d", ntohs((u_short)pTcpTable2->table[i].dwLocalPort));
-                
+                if (config.ShowPortDescriptions == 1)
+                {
+                    strcat_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].LocalPort)));
+                }
+
                 // Remote address.
                 IpAddr.S_un.S_addr = (u_long)pTcpTable2->table[i].dwRemoteAddr;
                 strcpy_s(ConnectionDetails[NumberOfConnections].RemoteAddress, sizeof(ConnectionDetails[NumberOfConnections].RemoteAddress) - 1, inet_ntoa(IpAddr));
@@ -357,8 +526,8 @@ int GetV4Connections(void)
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
                 if (config.DisableDNSLookup == 0 && DNSDONE == 0)
                 {
-                    ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress,0, &DNSDONE);
-                    strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, hostname);                                            
+                    ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress,0, &DNSDONE, HostName);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, HostName);
                 }
                 else
                 {
@@ -409,7 +578,7 @@ int GetV4Connections(void)
                     break;
                 }                
                 
-                // Connection type IPv4 or ipv6
+                // Connection type IPv4 or IPv6
                 sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionType, sizeof(ConnectionDetails[NumberOfConnections].ConnectionType) - 1, "IPv4");
                 NumberOfConnections++;
             }
@@ -443,7 +612,7 @@ int GetV4Connections(void)
  */
 const char* GetPortDescription(int port) {
     int low = 0;
-    int high = 59;
+    int high = 60;
     int median = 0;    
 
     // Do a Binary search on the port description array.
@@ -591,7 +760,7 @@ void cb_mnuSettings(void) {
         "Hide connections to 127.0.0.0 / 0.0.0.0 : %b\n"
         "Disable Reverse DNS Lookup : %b\n"
         "Show Port Descriptions : %b\n"
-        "Filter on Ports (Seperated by commas) : %s\n",
+        "Filter Ports (Separated by commas) : %s\n",
         
         &config.HideLocalConections,
         &config.DisableDNSLookup, 
@@ -624,7 +793,7 @@ void loadSettings(void) {
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableDNSLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
     config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 1);       
-    strcpy_s(config.PortFilter,sizeof(config.PortFilter), IupConfigGetVariableStr(iconfig, "NetStat", "PortFilter"));
+    strcpy_s(config.PortFilter,1024, IupConfigGetVariableStrDef(iconfig, "NetStat", "PortFilter",'\0'));
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -775,6 +944,7 @@ int FillNetStatGrid() {
         IupSetAttributeId2(iGrid, "", row + 1, 8, ConnectionDetails[row].ConnectionStatus); // Connection Status.
         IupSetAttributeId2(iGrid, "", row + 1, 9, ConnectionDetails[row].ConnectionType);   // Connection Type.        
     }
+    
     // Force a grid redraw.
     IupSetAttribute(iGrid, "REDRAW", "ALL");
 
@@ -799,20 +969,17 @@ int FillNetStatGrid() {
  *  Status code
  * 
  */
-int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
-    DWORD dwRetval;
+int ReverseDNSLookup(char * IP, int version, int *DNSDONE, char *HostName) {
+    DWORD dwRetval = 0;
     struct sockaddr_in saGNI;
     struct sockaddr_in6 saGNI6;
     char servInfo[NI_MAXSERV];
     u_short port = 27015;
     
-
     HASH_FIND_STR(reverseDNS_Hash, IP, DNS_Result);
     
     if (!DNS_Result) {
         *DNSDONE = 1;
-
-        // Call getnameinfo.
 
         //IPv4
         if (version == 0)
@@ -821,7 +988,7 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
             saGNI.sin_family = AF_INET;
             saGNI.sin_addr.s_addr = inet_addr(IP);
             saGNI.sin_port = htons(port);
-            dwRetval = getnameinfo((struct sockaddr*)&saGNI, sizeof(struct sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
+            dwRetval = getnameinfo((struct sockaddr*)&saGNI, sizeof(struct sockaddr), HostName, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
         }
         else
         {            
@@ -834,7 +1001,7 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
             inet_pton(AF_INET6, IP, &(saGNI6.sin6_addr));
 
             saGNI6.sin6_port = htons(port);
-            dwRetval = getnameinfo((struct sockaddr*)&saGNI6, sizeof(struct sockaddr), hostname, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);            
+            dwRetval = getnameinfo((struct sockaddr*)&saGNI6, sizeof(struct sockaddr), HostName, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);            
         }
         if (dwRetval != 0) {
             printf("getnameinfo failed with error # %ld\n", WSAGetLastError());
@@ -844,14 +1011,14 @@ int ReverseDNSLookup(char* IP, int version, int *DNSDONE) {
             // Store the result in the hash table.
             DNS_Result = (struct hostname_struct *) malloc(sizeof * DNS_Result);
             strcpy_s(DNS_Result->IP, sizeof(DNS_Result->IP) - 1, IP);
-            strcpy_s(DNS_Result->hostname,sizeof(DNS_Result->hostname) - 1, hostname);
+            strcpy_s(DNS_Result->hostname,sizeof(DNS_Result->hostname) - 1, HostName);
             HASH_ADD_STR(reverseDNS_Hash, IP, DNS_Result);
-            strcpy_s(hostname, sizeof(hostname) - 1, DNS_Result->hostname);
+            strcpy_s(HostName, NI_MAXHOST , DNS_Result->hostname);
         }
         return 1;
     }
     *DNSDONE = 0;
-    strcpy_s(hostname, sizeof(hostname) - 1, DNS_Result->hostname);
+    strcpy_s(HostName, NI_MAXHOST, DNS_Result->hostname);
     return 0;    
 }
 
@@ -958,6 +1125,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "MARKMODE", "LIN");
     IupSetAttribute(iGrid, "READONLY", "YES");
     IupSetAttribute(iGrid, "MENUCONTEXT", "NO");
+    
 
     // Grid column titles.
     IupSetAttributeId2(iGrid, "", 0, 1, "Process");
@@ -1022,7 +1190,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iStatusbar, "NAME", "STATUSBAR");
     IupSetAttribute(iStatusbar, "EXPAND", "HORIZONTAL");
     IupSetAttribute(iStatusbar, "PADDING", "10x5");
-    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2020 Les Farrell");
+    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2022 Les Farrell");
 
     // Initialise Configuration system.
     iconfig = IupConfig();
