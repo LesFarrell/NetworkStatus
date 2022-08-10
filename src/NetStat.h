@@ -1,17 +1,32 @@
 #ifndef NETSTAT_HEADER_GUARD
 #define NETSTAT_HEADER_GUARD
 
-#include "uthash.h"
+
+typedef struct  IPDetails_struct {
+    char LastUpdated[512];
+    char IP[32];
+    char country[512];
+    char city[512];
+    double latitude;
+    double longitude;
+    char org[512];
+    char isp[512];
+    char domain[512];
+} IPDetails_struct;
+IPDetails_struct IP_Details;
+
+
 
 // Function protypes.
 int FillNetStatGrid();
 void FindProcessName( DWORD processID, char *szProcessName);
-int ReverseDNSLookup(char* IP, int version, int* DNSDONE, char* hostname);
+int LookupIPDetails(char* IP, IPDetails_struct *IP_Details, int* DNSDONE);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
 void loadSettings(void);
 void saveSettings(void);
 const char* GetPortDescription(int port);
+int SearchDatabase(char* IP, IPDetails_struct* IP_Details);
 int GetV4Connections(void);
 int GetV6Connections(void);
 int GetV6Connections(void);
@@ -23,21 +38,18 @@ int cb_EnterCell(Ihandle* ih, int lin, int col);
 int cb_LeaveCell(Ihandle* ih, int lin, int col);
 int FilterEntryV4(MIB_TCPTABLE2* pTcpTable2, int idx);
 int FilterEntryV6(MIB_TCP6TABLE2* pTcpTable, int idx);
+void CreateDatabase(void);
+int FileExists(const char* filename);
 
-// Hash structure for saving hostnames.
-struct  hostname_struct{
-    char IP[32];
-    char hostname[NI_MAXHOST];
-    UT_hash_handle hh;
-};
-struct hostname_struct *reverseDNS_Hash = NULL, *DNS_Result = NULL;
 
 
 typedef struct configuration {
     int HideLocalConections;
     int DisableDNSLookup;
     int ShowPortDescriptions;
-    char PortFilter[1024];
+    int ApplyPortFilter;
+    char PortFilter[NI_MAXHOST];
+    char WhoIs[NI_MAXHOST];
 } configuration;
 configuration config;
 
@@ -118,7 +130,11 @@ typedef struct ConnectionData{
     char LocalPort[MAX_PATH];
     char RemoteAddress[MAX_PATH];
     char RemotePort[MAX_PATH];
-    char ReverseDNS[MAX_PATH];
+    char Country[MAX_PATH];
+    char City[MAX_PATH];
+    char ORG[MAX_PATH];
+    char ISP[MAX_PATH];
+    char DOMAIN[MAX_PATH];
     char ConnectionStatus[MAX_PATH];
     char ConnectionType[MAX_PATH];
 } ConnectionData;

@@ -11,7 +11,11 @@
 #include <iupcontrols.h>
 #include <iup_config.h>
 #include "netstat.h"
-#include "uthash.h"
+#include <sqlite3.h>
+#include <shlobj.h>
+#include <cjson.h>
+#include "httprequest.h"
+
 
 // Global Variables
 Ihandle *iStatusbar;                        // StatusBar handle.
@@ -22,12 +26,15 @@ ConnectionData* ConnectionDetails = NULL;   // Array of filtered connection deta
 int NumberOfConnections = 0;                // Number of entries in connection details array.
 
 
+WSADATA wsaData = { 0 };
+
+
 // Note: could also use malloc() and free()
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define CALLOC(x) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (x))
 #define FREE(x)   HeapFree(GetProcessHeap(), 0, (x))
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
 
 /*---------------------------------------------------------------------------------------
  * Function: strsplit
@@ -54,16 +61,13 @@ int strsplit(char* str, char c, char*** arr)
     char* t;
 
     p = str;
-    while (*p != '\0')
-    {
-        if (*p == c)
-            count++;
+    while (*p != '\0') {
+        if (*p == c) count++;
         p++;
     }
 
     *arr = (char**)malloc(sizeof(char*) * count);
-    if (*arr == NULL)
-        exit(1);
+    if (*arr == NULL) exit(1);
 
     p = str;
     while (*p != '\0')
@@ -71,18 +75,15 @@ int strsplit(char* str, char c, char*** arr)
         if (*p == c)
         {
             (*arr)[i] = (char*)malloc(sizeof(char) * token_len);
-            if ((*arr)[i] == NULL)
-                exit(1);
-
+            if ((*arr)[i] == NULL) exit(1);
             token_len = 0;
             i++;
         }
         p++;
         token_len++;
     }
-    (*arr)[i] = (char*)malloc(sizeof(char) * token_len);
-    if ((*arr)[i] == NULL)
-        exit(1);
+    (*arr)[i] = (char*) malloc(sizeof(char) * token_len);
+    if ((*arr)[i] == NULL) exit(1);
 
     i = 0;
     p = str;
@@ -98,7 +99,7 @@ int strsplit(char* str, char c, char*** arr)
         {
             *t = '\0';
             i++;
-            t = ((*arr)[i]);
+            t = (char*) ((*arr)[i]);
         }
         p++;
     }
@@ -107,9 +108,8 @@ int strsplit(char* str, char c, char*** arr)
 }
 
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+/*---------------------------------------------------------------------------------------
  * Function: FilterEntryV4
  * Tests to see if the entry should be filtered.
  *
@@ -120,7 +120,7 @@ int strsplit(char* str, char c, char*** arr)
  * Returns:
  * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
  *
- */
+ *---------------------------------------------------------------------------------------*/
 int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
 {    
     char RemoteAddress[256] = { '\0' };
@@ -151,15 +151,13 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
     }
 
     // Split the string and find the num of tokens.
-    if (strlen(config.PortFilter) > 0)
-    {
+    if (config.ApplyPortFilter == 1 && strlen(config.PortFilter) > 0) {
         numtokens = strsplit(config.PortFilter, ',', &arr);
 
         // Check the local ports
         retvalue = 1;
 
-        for (i = 0; i < numtokens; i++) {
-            printf("Local Port: %d\n", pTcpTable2->table[idx].dwRemotePort);
+        for (i = 0; i < numtokens; i++) {            
             if (atoi(arr[i]) == ntohs((u_short)pTcpTable2->table[idx].dwLocalPort)) {
                 retvalue = 0;
             }
@@ -173,8 +171,7 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
         }
 
         // Free up the memory allocated for each element
-        for (i = numtokens - 1; i >= 0; i--)
-            free(arr[i]);
+        for (i = numtokens - 1; i >= 0; i--) free(arr[i]);
 
         // Free the array pointer itself.
         free(arr);
@@ -184,9 +181,9 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
 
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: FilterEntryV6
  * Tests to see if the entry should be filtered.
  *
@@ -197,7 +194,7 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
  * Returns:
  * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
  *
- */
+ ---------------------------------------------------------------------------------------*/
 int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
 {
     wchar_t ipstringbuffer[46];
@@ -210,13 +207,11 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
 
     if (config.HideLocalConections == 1) {
 
-        if (InetNtop(AF_INET6, &pTcpTable->table[idx].LocalAddr, ipstringbuffer, 46) != NULL)
-        {
+        if (InetNtop(AF_INET6, &pTcpTable->table[idx].LocalAddr, ipstringbuffer, 46) != NULL) {
             to_narrow(ipstringbuffer, LocalAddress, sizeof(LocalAddress) - 1);
         }
 
-        if (InetNtop(AF_INET6, &pTcpTable->table[idx].RemoteAddr, ipstringbuffer, 46) != NULL)
-        {
+        if (InetNtop(AF_INET6, &pTcpTable->table[idx].RemoteAddr, ipstringbuffer, 46) != NULL) {
             to_narrow(ipstringbuffer, RemoteAddress, sizeof(RemoteAddress) - 1);
         }
 
@@ -230,15 +225,13 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
     }
 
     // Split the string and find the num of tokens.
-    if (strlen(config.PortFilter) > 0)
-    {
+    if (config.ApplyPortFilter == 1 && strlen(config.PortFilter) > 0) {
         numtokens = strsplit(config.PortFilter, ',', &arr);
 
         // Check the local ports
         retvalue = 1;
 
-        for (i = 0; i < numtokens; i++) {
-            printf("Local Port: %d\n", pTcpTable->table[idx].dwRemotePort);
+        for (i = 0; i < numtokens; i++) {            
             if (atoi(arr[i]) == ntohs((u_short)pTcpTable->table[idx].dwLocalPort)) {
                 retvalue = 0;
             }
@@ -252,20 +245,18 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
         }
 
         // Free up the memory allocated for each element
-        for (i = numtokens - 1; i >= 0; i--)
-            free(arr[i]);
+        for (i = numtokens - 1; i >= 0; i--) free(arr[i]);
 
         // Free the array pointer itself.
         free(arr);
     }
 
     return retvalue;
-    
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: GetV6Connections
  * Get and fill the connection details with IPv6 details.
  *
@@ -278,7 +269,7 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
  * Notes:
  * Fills ConnectionDetails will the details on the IPv4 connections.
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 int GetV6Connections(void)
 {
         // Declare and initialize variables
@@ -289,7 +280,6 @@ int GetV6Connections(void)
         wchar_t ipstringbuffer[46];
         int i;
         int DNSDONE = 0;
-        char HostName[NI_MAXHOST] = { '\0' };
 
         pTcpTable = (MIB_TCP6TABLE2*)MALLOC(sizeof(MIB_TCP6TABLE2));
         if (pTcpTable == NULL) {
@@ -297,8 +287,9 @@ int GetV6Connections(void)
             return 1;
         }
 
-        dwSize = sizeof(MIB_TCP6TABLE2);
+
         // Make an initial call to GetTcp6Table to get the necessary size into the dwSize variable
+        dwSize = sizeof(MIB_TCP6TABLE2);
         if ((dwRetVal = GetTcp6Table2(pTcpTable, &dwSize, TRUE)) ==
             ERROR_INSUFFICIENT_BUFFER) {
             FREE(pTcpTable);
@@ -311,34 +302,14 @@ int GetV6Connections(void)
 
         // Make a second call to GetTcp6Table to get the actual data we require
         if ((dwRetVal = GetTcp6Table2(pTcpTable, &dwSize, TRUE)) == NO_ERROR) {
-            for (i = 0; i < (int)pTcpTable->dwNumEntries; i++) 
-            {
+            for (i = 0; i < (int)pTcpTable->dwNumEntries; i++) {
                 if (FilterEntryV6(pTcpTable, i) == 0) 
-                {
-                    ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
-                    ConnectionDetails[NumberOfConnections].Process[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].PID[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].LocalAddress[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].LocalPort[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].RemoteAddress[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].RemotePort[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
-                    ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
-                    HostName[0] = '\0';
+                {                   
+                    ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));                    
+                    if (ConnectionDetails == NULL) break;
+                    memset(&ConnectionDetails[NumberOfConnections], 0, sizeof(ConnectionDetails[NumberOfConnections]));
 
                     sprintf_s(ConnectionDetails[NumberOfConnections].ConnectionType, sizeof(ConnectionDetails[NumberOfConnections].ConnectionType) - 1, "IPv6");
-
-                    if (config.DisableDNSLookup == 0 && DNSDONE == 0)
-                    {
-                        ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress, 1, &DNSDONE, HostName);
-                        strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, HostName);
-                    }
-                    else
-                    {
-                        strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, ConnectionDetails[NumberOfConnections].RemoteAddress);
-                        strcat_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, "*");
-                    }
 
                     switch (pTcpTable->table[i].State) {
                         case MIB_TCP_STATE_CLOSED:
@@ -383,32 +354,27 @@ int GetV6Connections(void)
                     }
 
                     FindProcessName((DWORD)pTcpTable->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
-                    sprintf_s(ConnectionDetails[NumberOfConnections].PID, sizeof(ConnectionDetails[NumberOfConnections].PID) - 1, "%d", (DWORD)pTcpTable->table[i].dwOwningPid);
+                    sprintf_s(ConnectionDetails[NumberOfConnections].PID, sizeof(ConnectionDetails[NumberOfConnections].PID) - 1, "%d ", (DWORD)pTcpTable->table[i].dwOwningPid);
 
                     if (InetNtop(AF_INET6, &pTcpTable->table[i].LocalAddr, ipstringbuffer, 46) == NULL) {
                         printf("  InetNtop function failed for local IPv6 address\n");
-                    }
-                    else
-                    {
+                    } else {
                         to_narrow(ipstringbuffer, buffer, sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].LocalAddress, sizeof(ConnectionDetails[NumberOfConnections].LocalAddress) - 1, "%s", buffer);
-                        if (config.ShowPortDescriptions == 1)
-                        {
+                        if (config.ShowPortDescriptions == 1) {
                             strcat_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].LocalPort)));
                         }
 
                     }                    
                     sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1,"%d", ntohs((u_short)pTcpTable->table[i].dwLocalPort));
                     
-                    if (InetNtop(AF_INET6, &pTcpTable->table[i].RemoteAddr, ipstringbuffer, 46) != NULL)
-                    {
+                    if (InetNtop(AF_INET6, &pTcpTable->table[i].RemoteAddr, ipstringbuffer, 46) != NULL) {
                         to_narrow(ipstringbuffer, buffer,sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].RemoteAddress, sizeof(ConnectionDetails[NumberOfConnections].RemoteAddress) - 1, "%s", buffer);
-
                     }                    
-                    sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, "%d", ntohs((u_short)pTcpTable->table[i].dwRemotePort));
-                    if (config.ShowPortDescriptions == 1)
-                    {
+                    sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, "%d ", ntohs((u_short)pTcpTable->table[i].dwRemotePort));
+                    
+                    if (config.ShowPortDescriptions == 1) {
                         strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
                     }
 
@@ -426,12 +392,13 @@ int GetV6Connections(void)
             FREE(pTcpTable);
             pTcpTable = NULL;
         }
+
         return 0;    
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: GetV4Connections
  * Get and process the IPv4 connection list.
  *
@@ -444,7 +411,7 @@ int GetV6Connections(void)
  * Notes:
  * Fills ConnectionDetails will the details on the IPv4 connections.
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 int GetV4Connections(void)
 {
     // Declare and initialize variables.
@@ -481,20 +448,13 @@ int GetV4Connections(void)
     // Make a second call to GetTcpTable to get the actual data we require.
     if ((dwRetVal = GetTcpTable2(pTcpTable2, &ulSize, TRUE)) == NO_ERROR) {                
         for (i = 0; i < (int)pTcpTable2->dwNumEntries; i++) {
-            if (FilterEntryV4(pTcpTable2, i) == 0) 
-            {
-                ConnectionDetails = (ConnectionData *) realloc (ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));
-                ConnectionDetails[NumberOfConnections].Process[0] = '\0';
-                ConnectionDetails[NumberOfConnections].PID[0] = '\0';
-                ConnectionDetails[NumberOfConnections].LocalAddress[0] = '\0';
-                ConnectionDetails[NumberOfConnections].LocalPort[0] = '\0';
-                ConnectionDetails[NumberOfConnections].RemoteAddress[0] = '\0';
-                ConnectionDetails[NumberOfConnections].RemotePort[0] = '\0';
-                ConnectionDetails[NumberOfConnections].ReverseDNS[0] = '\0';
-                ConnectionDetails[NumberOfConnections].ConnectionStatus[0] = '\0';
-                ConnectionDetails[NumberOfConnections].ConnectionType[0] = '\0';
+            if (FilterEntryV4(pTcpTable2, i) == 0) {
                 
-                
+                ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));                
+                if (ConnectionDetails == NULL) break;
+
+                memset(&ConnectionDetails[NumberOfConnections], 0, sizeof(ConnectionDetails[NumberOfConnections]));
+
                 // Process Name.
                 FindProcessName((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
 
@@ -506,9 +466,8 @@ int GetV4Connections(void)
                 strcpy_s(ConnectionDetails[NumberOfConnections].LocalAddress, sizeof(ConnectionDetails[NumberOfConnections].LocalAddress) - 1, inet_ntoa(IpAddr));
                 
                 // Local port.
-                sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, "%d", ntohs((u_short)pTcpTable2->table[i].dwLocalPort));
-                if (config.ShowPortDescriptions == 1)
-                {
+                sprintf_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, "%d ", ntohs((u_short)pTcpTable2->table[i].dwLocalPort));
+                if (config.ShowPortDescriptions == 1) {
                     strcat_s(ConnectionDetails[NumberOfConnections].LocalPort, sizeof(ConnectionDetails[NumberOfConnections].LocalPort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].LocalPort)));
                 }
 
@@ -518,21 +477,18 @@ int GetV4Connections(void)
                 
                 // Remote port.
                 sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1,"%d ", ntohs((u_short)pTcpTable2->table[i].dwRemotePort));
-                if (config.ShowPortDescriptions == 1)
-                {
+                if (config.ShowPortDescriptions == 1) {
                     strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
                 }
 
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
-                if (config.DisableDNSLookup == 0 && DNSDONE == 0)
-                {
-                    ReverseDNSLookup(ConnectionDetails[NumberOfConnections].RemoteAddress,0, &DNSDONE, HostName);
-                    strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, HostName);
-                }
-                else
-                {
-                    strcpy_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, ConnectionDetails[NumberOfConnections].RemoteAddress);
-                    strcat_s(ConnectionDetails[NumberOfConnections].ReverseDNS, sizeof(ConnectionDetails[NumberOfConnections].ReverseDNS) - 1, "*");
+                if (config.DisableDNSLookup == 0 && DNSDONE == 0) {
+                    LookupIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &DNSDONE);                    
+                    strcpy_s(ConnectionDetails[NumberOfConnections].Country, sizeof(ConnectionDetails[NumberOfConnections].Country) - 1, IP_Details.country);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].City, sizeof(ConnectionDetails[NumberOfConnections].City) - 1, IP_Details.city);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].ORG, sizeof(ConnectionDetails[NumberOfConnections].ORG) - 1, IP_Details.org);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].ISP, sizeof(ConnectionDetails[NumberOfConnections].ISP) - 1, IP_Details.isp);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].DOMAIN, sizeof(ConnectionDetails[NumberOfConnections].DOMAIN) - 1, IP_Details.domain);
                 }
 
                 // Display Socket states.
@@ -583,8 +539,7 @@ int GetV4Connections(void)
                 NumberOfConnections++;
             }
         }
-    }
-    else {
+    } else {
         printf("\tGetTcpTable failed with %d\n", dwRetVal);
         FREE(pTcpTable2);
         return 1;
@@ -593,13 +548,15 @@ int GetV4Connections(void)
     if (pTcpTable2 != NULL) {
         FREE(pTcpTable2);
         pTcpTable2 = NULL;
+        
     }
+
     return 0;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: GetPortDescription
  * Search the Port Descriptions and match the port number with it's description.
  *
@@ -609,12 +566,12 @@ int GetV4Connections(void)
  * Returns:
  * const char * Ports Description.
  *
- */
+ ---------------------------------------------------------------------------------------*/
 const char* GetPortDescription(int port) {
     int low = 0;
     int high = 60;
     int median = 0;    
-
+    
     // Do a Binary search on the port description array.
     do {
         median = (low + high) / 2;
@@ -633,9 +590,9 @@ const char* GetPortDescription(int port) {
     }
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: cb_EnterCell
  * Called when the focus enters a cell.
  *
@@ -647,16 +604,16 @@ const char* GetPortDescription(int port) {
  * Returns:
  * IUP_DEFAULT
  *
- */
+ ---------------------------------------------------------------------------------------*/
 int cb_EnterCell(Ihandle* ih, int lin, int col) {
-    // Mark the selected line in the matrix.
+    // Mark the selected line in the matrix.    
     IupSetAttributeId2(ih, "MARK", lin, 0, "1");
     return IUP_DEFAULT;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: cb_LeaveCell
  * Called when the focus leaves a cell.
  *
@@ -668,17 +625,17 @@ int cb_EnterCell(Ihandle* ih, int lin, int col) {
  * Returns:
  * IUP_DEFAULT
  *
- */
+ ---------------------------------------------------------------------------------------*/
 int cb_LeaveCell(Ihandle* ih, int lin, int col) {
     // Unmark the selected line in the matrix.
     IupSetAttributeId2(ih, "MARK", lin, 0, "0");
     return IUP_DEFAULT;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
- * Function: mnuaboutbox_cb
+
+/*---------------------------------------------------------------------------------------
+ * Function: cb_mnuaboutbox
  * Show the applications about box.
  *
  * Parameters:
@@ -687,12 +644,14 @@ int cb_LeaveCell(Ihandle* ih, int lin, int col) {
  * Returns:
  * void.
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 void cb_mnuAboutBox(void) {
     char buffer[2048];
     strcpy_s(buffer,sizeof(buffer) -1, "Network Status by Les Farrell");
-    strcat_s(buffer, sizeof(buffer) - 1, "\n\nIUP GUI Toolkit: ");
-    strcat_s(buffer, sizeof(buffer) - 1, IupGetGlobal("VERSION"));
+    strcat_s(buffer, sizeof(buffer) - 1, "\n\nSQLite3 : \t\t");
+    strcat_s(buffer, sizeof(buffer) - 1, sqlite3_version);
+    strcat_s(buffer, sizeof(buffer) - 1, "\nIUP GUI Toolkit :\t");
+    strcat_s(buffer, sizeof(buffer) - 1, IupGetGlobal("VERSION"));    
     strcat_s(buffer, sizeof(buffer) - 1, "\n\nCopyright 2022 Les Farrell");
     strcat_s(buffer, sizeof(buffer) - 1, "\nLast compiled at ");
     strcat_s(buffer, sizeof(buffer) - 1, __TIME__);
@@ -702,9 +661,9 @@ void cb_mnuAboutBox(void) {
     return;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: cb_Timer
  * Call back function for the IUP timer.
  *
@@ -714,16 +673,16 @@ void cb_mnuAboutBox(void) {
  * Returns:
  * IUP_DEFAULT
  *
- */
+ ---------------------------------------------------------------------------------------*/
 int cb_Timer(Ihandle *ih) {
     // Fill the grid with connection details.
     FillNetStatGrid();
     return IUP_DEFAULT;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: cb_mnuExit
  * Tells IUP to close down.
  *
@@ -733,14 +692,14 @@ int cb_Timer(Ihandle *ih) {
  * Returns:
  * IUP_CLOSE
  *
- */
+ ---------------------------------------------------------------------------------------*/
 int cb_mnuExit(void) {
   return IUP_CLOSE;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: cb_mnuSettings
  * Show the settings dialog and apply the settings
  *
@@ -749,7 +708,7 @@ int cb_mnuExit(void) {
  *
  * Returns:
  *  void
- */
+ ---------------------------------------------------------------------------------------*/
 void cb_mnuSettings(void) {
     int result;
    
@@ -757,27 +716,31 @@ void cb_mnuSettings(void) {
 
     // Build up the dialog and show it.
     result = IupGetParam("Settings", NULL, 0,
-        "Hide connections to 127.0.0.0 / 0.0.0.0 : %b\n"
-        "Disable Reverse DNS Lookup : %b\n"
+        "Hide Connections to 127.0.0.0 / 0.0.0.0 : %b\n"
+        "Disable IP Country Lookups : %b\n"
         "Show Port Descriptions : %b\n"
-        "Filter Ports (Separated by commas) : %s\n",
-        
+        "Filter by Port Number : %b\n"
+        "Port Filter List (Separated by commas) : %s\n"
+        "Country Lookup Server : %s\n",
         &config.HideLocalConections,
         &config.DisableDNSLookup, 
         &config.ShowPortDescriptions, 
-        &config.PortFilter
+        &config.ApplyPortFilter,
+        &config.PortFilter,
+        &config.WhoIs
     );
     
-    // Okay was pressed the save the settings.
+    // Okay was pressed so save the settings and refill the grid.
     if (result == 1) {
         saveSettings();
+        FillNetStatGrid();
     }
     return;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: loadSettings
  * Load the settings from the configuration file.
  *
@@ -787,18 +750,19 @@ void cb_mnuSettings(void) {
  * Returns:
  *  void.
  *
- */
+ ---------------------------------------------------------------------------------------*/
 void loadSettings(void) {
     // Read the current settings.
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableDNSLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
     config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 1);       
-    strcpy_s(config.PortFilter,1024, IupConfigGetVariableStrDef(iconfig, "NetStat", "PortFilter",'\0'));
+    config.ApplyPortFilter = IupConfigGetVariableIntDef(iconfig, "NetStat", "ApplyPortFilter", 1);
+    strcpy_s(config.PortFilter, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "PortFilter","\0"));
+    strcpy_s(config.WhoIs, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "LookupServer", "ipwho.is\0"));
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+/*---------------------------------------------------------------------------------------
  * Function: saveSettings
  * Save the applications settings to the configuration file.
  *
@@ -808,19 +772,21 @@ void loadSettings(void) {
  * Returns:
  *  void.
  *
- */
+ ---------------------------------------------------------------------------------------*/
 void saveSettings(void) {
     // Save the updated settings.
     IupConfigSetVariableInt(iconfig, "NetStat", "HideLocal", config.HideLocalConections);
     IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableDNSLookup);
     IupConfigSetVariableInt(iconfig, "NetStat", "ShowPortDescriptions", config.ShowPortDescriptions);
+    IupConfigSetVariableInt(iconfig, "NetStat", "ApplyPortFilter", config.ApplyPortFilter);
     IupConfigSetVariableStr(iconfig, "NetStat", "PortFilter", config.PortFilter);
+    IupConfigSetVariableStr(iconfig, "NetStat", "LookupServer", config.WhoIs);
     IupConfigSave(iconfig);
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: to_narrow
  * Converts a wide character array to a char array for use in C strings
  *
@@ -832,7 +798,7 @@ void saveSettings(void) {
  * Returns:
  *  Number of chars extracted from the wide char string.
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
     size_t i = 0;
     wchar_t code;
@@ -852,12 +818,13 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
         i++;
     }
     dest[i] = '\0';
+
     return i - 1;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: FindProcessName
  * Finds the name of an executable given it's process ID.
  *
@@ -867,11 +834,11 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
  * Returns:
  *  Fills 'szProcessName' with the executables name.
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 void FindProcessName( DWORD processID, char* szProcessName) {
 	HANDLE hProcessSnap;
 	PROCESSENTRY32 pe32;
-    
+
 	// Take a snapshot of all processes in the system.
 	hProcessSnap = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0);
 	if( hProcessSnap == INVALID_HANDLE_VALUE ) {
@@ -889,8 +856,8 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 	}
 
     // Search for the requested process ID.
-    while(processID != pe32.th32ProcessID) {
-        Process32Next(hProcessSnap, &pe32);
+    while(processID != pe32.th32ProcessID) {        
+        if (Process32Next(hProcessSnap, &pe32) == 0) break;
 	} 
     
     // Have we found a match?
@@ -903,12 +870,13 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 
     // Must clean up the snapshot handle.
 	CloseHandle( hProcessSnap );
+
 	return;	
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: FillNetStatGrid
  * Fills a list with the connection details.
  *
@@ -918,9 +886,11 @@ void FindProcessName( DWORD processID, char* szProcessName) {
  * Returns:
  *  Status code
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 int FillNetStatGrid() {
     NumberOfConnections = 0;
+
+    //Debug_LogMessage(LOG_INFO, "Enter FillNetStatGrid");
 
     // Grab the IPv4 connections
     GetV4Connections();
@@ -936,13 +906,17 @@ int FillNetStatGrid() {
     {
         IupSetAttributeId2(iGrid, "", row + 1, 1, ConnectionDetails[row].Process);          // Process Name.
         IupSetAttributeId2(iGrid, "", row + 1, 2, ConnectionDetails[row].PID);              // Display the Process PID.        
-        IupSetAttributeId2(iGrid, "", row + 1, 3, ConnectionDetails[row].LocalAddress);     // Local address.      
-        IupSetAttributeId2(iGrid, "", row + 1, 4, ConnectionDetails[row].LocalPort);        // Local port.
-        IupSetAttributeId2(iGrid, "", row + 1, 5, ConnectionDetails[row].RemoteAddress);    // Remote address.
-        IupSetAttributeId2(iGrid, "", row + 1, 6, ConnectionDetails[row].RemotePort);       // Remote port.              
-        IupSetAttributeId2(iGrid, "", row + 1, 7, ConnectionDetails[row].ReverseDNS);       // Reverse DNS.        
-        IupSetAttributeId2(iGrid, "", row + 1, 8, ConnectionDetails[row].ConnectionStatus); // Connection Status.
-        IupSetAttributeId2(iGrid, "", row + 1, 9, ConnectionDetails[row].ConnectionType);   // Connection Type.        
+        IupSetAttributeId2(iGrid, "", row + 1, 3, ConnectionDetails[row].ConnectionStatus); // Connection Status.
+        IupSetAttributeId2(iGrid, "", row + 1, 4, ConnectionDetails[row].LocalAddress);     // Local address.      
+        IupSetAttributeId2(iGrid, "", row + 1, 5, ConnectionDetails[row].LocalPort);        // Local port.
+        IupSetAttributeId2(iGrid, "", row + 1, 6, ConnectionDetails[row].RemoteAddress);    // Remote address.
+        IupSetAttributeId2(iGrid, "", row + 1, 7, ConnectionDetails[row].RemotePort);       // Remote port.                      
+        IupSetAttributeId2(iGrid, "", row + 1, 8, ConnectionDetails[row].City);             // City.                
+        IupSetAttributeId2(iGrid, "", row + 1, 9, ConnectionDetails[row].Country);          // Country.                
+        IupSetAttributeId2(iGrid, "", row + 1, 10, ConnectionDetails[row].ISP);             // ISP
+        IupSetAttributeId2(iGrid, "", row + 1, 11, ConnectionDetails[row].ORG);             // Org                
+        IupSetAttributeId2(iGrid, "", row + 1, 12, ConnectionDetails[row].DOMAIN);          // Domain                
+        IupSetAttributeId2(iGrid, "", row + 1, 13, ConnectionDetails[row].ConnectionType);  // Connection Type.        
     }
     
     // Force a grid redraw.
@@ -956,75 +930,105 @@ int FillNetStatGrid() {
     return 0;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
- * Function: ReverseDNSLookup
- * Tries to do a reverse lookup on the passed IP address.
+
+/*---------------------------------------------------------------------------------------
+ * Function: LookupIPDetails
+ * lookup details for the passed IP address.
  *
+ * Notes:
+ * First checks the database and if nothing is found or the data is stale performs a DNS lookup.
+ * 
  * Parameters:
  * IP - String containing the remote IP address.
  *
  * Returns:
  *  Status code
  * 
- */
-int ReverseDNSLookup(char * IP, int version, int *DNSDONE, char *HostName) {
-    DWORD dwRetval = 0;
-    struct sockaddr_in saGNI;
-    struct sockaddr_in6 saGNI6;
-    char servInfo[NI_MAXSERV];
-    u_short port = 27015;
+ ---------------------------------------------------------------------------------------*/
+int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {    
+    int Found = 0;
+    char *strJSON = NULL;
+    char buffer[1024] = { '\0' };
+    char SQL[4096] = { '\0' };
+    int rc = 0;
+    sqlite3_stmt* stmtIPDetails;
+    sqlite3* DataBaseHandle;
+
+    memset(IP_Details, 0, sizeof(*IP_Details));
     
-    HASH_FIND_STR(reverseDNS_Hash, IP, DNS_Result);
-    
-    if (!DNS_Result) {
-        *DNSDONE = 1;
-
-        //IPv4
-        if (version == 0)
-        {
-            // Set up sockaddr_in structure which is passed to the getnameinfo function.
-            saGNI.sin_family = AF_INET;
-            saGNI.sin_addr.s_addr = inet_addr(IP);
-            saGNI.sin_port = htons(port);
-            dwRetval = getnameinfo((struct sockaddr*)&saGNI, sizeof(struct sockaddr), HostName, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);
-        }
-        else
-        {            
-            //IPv6
-
-            // Set up sockaddr_in structure which is passed to the getnameinfo function.           
-            saGNI6.sin6_family = AF_INET;
-
-            // IPv6 string to sockaddr_in6.
-            inet_pton(AF_INET6, IP, &(saGNI6.sin6_addr));
-
-            saGNI6.sin6_port = htons(port);
-            dwRetval = getnameinfo((struct sockaddr*)&saGNI6, sizeof(struct sockaddr), HostName, NI_MAXHOST, servInfo, NI_MAXSERV, NI_NUMERICSERV);            
-        }
-        if (dwRetval != 0) {
-            printf("getnameinfo failed with error # %ld\n", WSAGetLastError());
-            return 255;
-        }
-        else {
-            // Store the result in the hash table.
-            DNS_Result = (struct hostname_struct *) malloc(sizeof * DNS_Result);
-            strcpy_s(DNS_Result->IP, sizeof(DNS_Result->IP) - 1, IP);
-            strcpy_s(DNS_Result->hostname,sizeof(DNS_Result->hostname) - 1, HostName);
-            HASH_ADD_STR(reverseDNS_Hash, IP, DNS_Result);
-            strcpy_s(HostName, NI_MAXHOST , DNS_Result->hostname);
-        }
-        return 1;
+    Found = SearchDatabase(IP, IP_Details);
+    if (Found == 1) {
+        *DNSDONE = 0;
+        return 0;
     }
-    *DNSDONE = 0;
-    strcpy_s(HostName, NI_MAXHOST, DNS_Result->hostname);
+    
+    strcpy_s(buffer,sizeof(buffer) -1, "/");
+    strcat_s(buffer,sizeof(buffer)-1, IP);
+
+    strJSON = HTTP_GetContent(config.WhoIs, buffer);
+    if (strJSON != NULL)
+    {
+        cJSON* json = cJSON_Parse(strJSON);
+        const cJSON* ip = cJSON_GetObjectItemCaseSensitive(json, "ip");
+        const cJSON* country = cJSON_GetObjectItemCaseSensitive(json, "country");
+        const cJSON* city = cJSON_GetObjectItemCaseSensitive(json, "city");
+        const cJSON* longitude = cJSON_GetObjectItemCaseSensitive(json, "longitude");
+        const cJSON* latitude = cJSON_GetObjectItemCaseSensitive(json, "latitude");
+        const cJSON* connection = cJSON_GetObjectItemCaseSensitive(json, "connection");
+        const cJSON* org = cJSON_GetObjectItemCaseSensitive(connection, "org");
+        const cJSON* isp = cJSON_GetObjectItemCaseSensitive(connection, "isp");
+        const cJSON* domain = cJSON_GetObjectItemCaseSensitive(connection, "domain");
+
+
+        SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
+        strcat_s(buffer, sizeof(buffer) - 1, "\\Network_Status.db3");
+                
+        sqlite3_open(buffer, &DataBaseHandle);
+                
+        sprintf_s(SQL,sizeof(SQL)-1, "INSERT INTO tblKnownIPs ( IP, Country, City, ORG, ISP, Domain, Latitude, Longitude) VALUES (?,?,?,?, ?,?,?,?)");
+        sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmtIPDetails, 0);
+        
+        sqlite3_reset(stmtIPDetails);
+        sqlite3_clear_bindings(stmtIPDetails);
+        sqlite3_bind_text(stmtIPDetails, 1, ip->valuestring, -1, NULL);        
+        sqlite3_bind_text(stmtIPDetails, 2, country->valuestring, -1, NULL);
+        sqlite3_bind_text(stmtIPDetails, 3, city->valuestring, -1, NULL);
+        sqlite3_bind_text(stmtIPDetails, 4, org->valuestring, -1, NULL);
+        sqlite3_bind_text(stmtIPDetails, 5, isp->valuestring, -1, NULL);
+        sqlite3_bind_text(stmtIPDetails, 6, domain->valuestring, -1, NULL);
+        sqlite3_bind_double(stmtIPDetails, 7, latitude->valuedouble);
+        sqlite3_bind_double(stmtIPDetails, 8, longitude->valuedouble);
+
+        rc = sqlite3_step(stmtIPDetails);
+        if (rc != SQLITE_DONE) printf("%s\n", sqlite3_errmsg(DataBaseHandle));
+
+        // Finalise the statement.
+        sqlite3_finalize(stmtIPDetails);
+
+        *IP_Details->IP = *ip->valuestring;
+        *IP_Details->country = *country->valuestring;
+        *IP_Details->city = *city->valuestring;
+        *IP_Details->org = *org->valuestring;
+        *IP_Details->isp = *isp->valuestring;
+        *IP_Details->domain = *domain->valuestring;
+        
+        // Close the database
+        sqlite3_close(DataBaseHandle);
+
+        if (strJSON != NULL) free(strJSON);
+
+        cJSON_Delete(json);
+        
+        *DNSDONE = 1;
+    }
+    
     return 0;    
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
  * Function: Initialise Winsock
  * Initialise the Winsock library.
  *
@@ -1034,9 +1038,8 @@ int ReverseDNSLookup(char * IP, int version, int *DNSDONE, char *HostName) {
  * Returns:
  *  1 = Failed to intialise WinSock, otherwise returns 0.
  * 
- */
-int InitialiseWinsock() {
-    WSADATA wsaData = { 0 };
+ ---------------------------------------------------------------------------------------*/
+int InitialiseWinsock() {    
     int iResult = 0;
 
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -1044,12 +1047,167 @@ int InitialiseWinsock() {
         printf("WSAStartup failed: %d\n", iResult);
         return 1;
     }
+
     return 0;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-/*
+
+/*---------------------------------------------------------------------------------------
+ * Function: FileExists
+ * Checks to see if a file exists by trying to open it
+ *
+ * Parameters:
+ * filename - Path to the file to check.
+ *
+ * Returns:
+ * int  : 1 = Filexists otherwise 0
+ *
+ ---------------------------------------------------------------------------------------*/
+int FileExists(const char* filename)
+{
+    FILE* fp;
+    errno_t err;
+
+    err = fopen_s(&fp, filename, "r");
+    if ( err == 0)
+    {
+        fclose(fp);
+        return 1;
+    }
+    
+    return 0;
+}
+
+
+
+/*---------------------------------------------------------------------------------------
+ * Function: CreateDatabase
+ * Creates a sqlite database to hold the applications settings
+ *
+ * Parameters:
+ * void
+ * 
+ *
+ * Returns:
+ * void
+ * 
+ * Notes:
+ * The database is created in the root of the users 'My Documents' folder.
+ *
+ ---------------------------------------------------------------------------------------*/
+void CreateDatabase(void)
+{
+    int rc = 0;
+    char SQL[1024] = { '\0' };
+    char buffer[1024] = { '\0' };
+    sqlite3* DataBaseHandle;
+
+    SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);    
+    strcat_s(buffer,sizeof(buffer) -1, "\\Network_Status.db3");
+
+    
+    if (FileExists(buffer) == 0)
+    {
+        rc = sqlite3_open(buffer, &DataBaseHandle);
+
+        strcpy_s(SQL, sizeof(SQL) - 1, "CREATE TABLE IF NOT EXISTS tblKnownIPs (LastUpdated DATETIME DEFAULT (datetime('now','localtime')), IP TEXT UNIQUE, Description TEXT, ReverseDNS TEXT, Country TEXT, City TEXT, ORG TEXT, ISP TEXT, Domain TEXT, Latitude REAL, Longitude REAL);");
+        rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+
+
+        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('0.0.0.0', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost';");
+        rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+
+        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('127.0.0.1', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost';");
+        rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+
+        rc = sqlite3_close_v2(DataBaseHandle);
+    }
+    
+}
+
+
+
+/*---------------------------------------------------------------------------------------
+ * Function: SearchDatabase
+ * Search the database for details about the passed IP
+ *
+ * Parameters:
+ * IP           - char * IP - IP Address to find.
+ * IP_Details   - Pointer to IPDetails_struct.
+ *
+ * Returns:
+ * 1 = Details found, otherwise returns 0.
+ *
+ ---------------------------------------------------------------------------------------*/
+int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
+{
+    char buffer[1024] = { '\0' };
+    char SQL[1024] = { '\0' };
+    sqlite3_stmt* stmt = NULL;
+    sqlite3* DataBaseHandle;
+    int rc = 0;
+    int Found = 0;
+
+    SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
+    
+    strcat_s(buffer,sizeof(buffer)-1,  "\\Network_Status.db3");
+
+    rc = sqlite3_open(buffer, &DataBaseHandle);
+
+    sprintf_s(SQL, sizeof(SQL) - 1, "SELECT IP, Country, City, latitude, longitude, org, isp, domain  FROM tblKnownIPs WHERE IP like '%s';", IP);
+
+    rc = sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmt, 0);
+    if (rc == SQLITE_OK)
+    {
+        do
+        {
+            // Step for each record.
+            rc = sqlite3_step(stmt);
+
+            switch (rc)
+            {
+            case SQLITE_ROW:
+                Found = 1;
+                sprintf_s(IP_Details->IP, sizeof(IP_Details->IP) - 1, "d%s", sqlite3_column_text(stmt, 0));
+                sprintf_s(IP_Details->country, sizeof(IP_Details->country) - 1, "%s", sqlite3_column_text(stmt, 1));
+                sprintf_s(IP_Details->city, sizeof(IP_Details->city) - 1, "%s", sqlite3_column_text(stmt, 2));
+                IP_Details->latitude = sqlite3_column_double(stmt, 3);
+                IP_Details->longitude = sqlite3_column_double(stmt, 4);
+                sprintf_s(IP_Details->org, sizeof(IP_Details->org) - 1, "%s", sqlite3_column_text(stmt, 5));
+                sprintf_s(IP_Details->isp, sizeof(IP_Details->isp) - 1, "%s", sqlite3_column_text(stmt, 6));
+                sprintf_s(IP_Details->domain, sizeof(IP_Details->domain) - 1, "%s", sqlite3_column_text(stmt, 7));
+                break;
+
+            default:
+                break;
+            }
+
+        } while (rc != SQLITE_DONE);
+    }
+    else 
+    {        
+        sprintf_s(IP_Details->IP, sizeof(IP_Details->IP) - 1, "%s", IP);
+        sprintf_s(IP_Details->country, sizeof(IP_Details->country) - 1, "Unknown");
+        sprintf_s(IP_Details->city, sizeof(IP_Details->city) - 1,  "Unknown");
+        sprintf_s(IP_Details->org, sizeof(IP_Details->org) - 1, "Unknown");
+        sprintf_s(IP_Details->isp, sizeof(IP_Details->isp) - 1, "Unknown");
+        sprintf_s(IP_Details->domain, sizeof(IP_Details->domain) - 1, "Unknown");
+        IP_Details->latitude = 91;
+        IP_Details->longitude = 181;
+    }
+    
+    // Finalise the statement.
+    sqlite3_finalize(stmt);
+
+    rc = sqlite3_close_v2(DataBaseHandle);
+
+    return Found;
+}
+
+
+
+/*---------------------------------------------------------------------------------------
  * Function: main
  * The programs main entry point.
  *
@@ -1060,7 +1218,7 @@ int InitialiseWinsock() {
  * Returns:
  * Status Code
  * 
- */
+ ---------------------------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
     Ihandle *iDialog;
     Ihandle *iVbox;
@@ -1071,33 +1229,42 @@ int main(int argc, char* argv[]) {
     Ihandle *optionsub_menu;
     Ihandle *item_about;
     Ihandle *help_menu, *helpsub_menu;
-    
-    struct hostname_struct* tmpDNS = NULL;
 
     // Initialise the IUP toolkit.
     if (IupOpen(&argc, &argv) == IUP_ERROR) return 0;
 
+
     // Stop the Not Responding Message.
     IupSetGlobal("PROCESSWINDOWSGHOSTING", "NO");
+
 
     // Initialise IUP Controls.
     IupControlsOpen();
 
+
     // Initialise Winsock.
     InitialiseWinsock();
 
+
+    // Create the sqlite database
+    CreateDatabase();
+
+
     // Setup the file menu.
     item_exit = IupItem("Exit", NULL);
-    IupSetCallback(item_exit, "ACTION", (Icallback)cb_mnuExit);
+    IupSetCallback(item_exit, "ACTION", (Icallback) cb_mnuExit);
     file_menu = IupMenu(item_exit, NULL);
     filesub_menu = IupSubmenu("File", file_menu);
+
 
     // Setup the options menu.
     item_settings = IupItem("Settings", NULL);
 
+
     IupSetCallback(item_settings, "ACTION", (Icallback)cb_mnuSettings);
     options_menu = IupMenu(item_settings, NULL);
     optionsub_menu = IupSubmenu("Options", options_menu);
+
 
     // Setup the help menu.
     item_about = IupItem("About", NULL);
@@ -1105,72 +1272,94 @@ int main(int argc, char* argv[]) {
     helpsub_menu = IupSubmenu("Help", help_menu);
     IupSetCallback(item_about, "ACTION", (Icallback)cb_mnuAboutBox);
 
+
     // Define the programs main menu.
     menu = IupMenu(filesub_menu, optionsub_menu, helpsub_menu, NULL);
 
-    // Define the IUP Controls.
-        
+
     // Define the status bar.
     iStatusbar = IupLabel("");
-    IupSetAttribute(iStatusbar, "PADDING", "10x5");
+    
 
     // Define the matrix.
     iGrid = IupMatrixEx();
 
+
     // Grid attributes.
     IupSetAttribute(iGrid, "FLAT", "YES");
-    IupSetAttribute(iGrid, "NUMCOL", "9");    
+    IupSetAttribute(iGrid, "NUMCOL", "13");    
     IupSetAttribute(iGrid, "EXPAND", "YES");
     IupSetAttribute(iGrid, "RESIZEMATRIX", "YES");
     IupSetAttribute(iGrid, "MARKMODE", "LIN");
     IupSetAttribute(iGrid, "READONLY", "YES");
     IupSetAttribute(iGrid, "MENUCONTEXT", "NO");
+    IupSetAttribute(iGrid, "MARKMULTIPLE", "NO");
     
-
-    // Grid column titles.
+    
+    // Grid column titles, alignments and widths
     IupSetAttributeId2(iGrid, "", 0, 1, "Process");
-    IupSetAttributeId2(iGrid, "", 0, 2, "PID");
-    IupSetAttributeId2(iGrid, "", 0, 3, "Local Address");
-    IupSetAttributeId2(iGrid, "", 0, 4, "Local Port");
-    IupSetAttributeId2(iGrid, "", 0, 5, "Remote Address");
-    IupSetAttributeId2(iGrid, "", 0, 6, "Remote Port");
-    IupSetAttributeId2(iGrid, "", 0, 7, "Reverse DNS");
-    IupSetAttributeId2(iGrid, "", 0, 8, "Connection Status");
-    IupSetAttributeId2(iGrid, "", 0, 9, "Type");
-
-    // Grid column widths.
-    IupSetAttribute(iGrid, "WIDTH1", "110");
-    IupSetAttribute(iGrid, "WIDTH2", "30");
-    IupSetAttribute(iGrid, "WIDTH3", "55");
-    IupSetAttribute(iGrid, "WIDTH4", "55");
-    IupSetAttribute(iGrid, "WIDTH5", "60");
-    IupSetAttribute(iGrid, "WIDTH6", "55");
-    IupSetAttribute(iGrid, "WIDTH7", "175");
-    IupSetAttribute(iGrid, "WIDTH8", "80");
-    IupSetAttribute(iGrid, "WIDTH9", "50");
-
-    // Grid column alignments.    
+    IupSetAttribute(iGrid, "WIDTH1", "115");
     IupSetAttribute(iGrid, "ALIGNMENT1", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT2", "ALEFT");        
-    IupSetAttribute(iGrid, "ALIGNMENT3", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT4", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT5", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT6", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT8", "ALEFT");
-    IupSetAttribute(iGrid, "ALIGNMENT9", "ALEFT");
     
+    IupSetAttributeId2(iGrid, "", 0, 2, "PID");
+    IupSetAttribute(iGrid, "WIDTH2", "30");
+    IupSetAttribute(iGrid, "ALIGNMENT2", "ALEFT");
+    
+    IupSetAttributeId2(iGrid, "", 0, 3, "Connection Status");
+    IupSetAttribute(iGrid, "WIDTH3", "80");
+    IupSetAttribute(iGrid, "ALIGNMENT3", "ALEFT");
+    
+    IupSetAttributeId2(iGrid, "", 0, 4, "Local Address");
+    IupSetAttribute(iGrid, "WIDTH4", "55");
+    IupSetAttribute(iGrid, "ALIGNMENT4", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 5, "Local Port");
+    IupSetAttribute(iGrid, "WIDTH5", "55");
+    IupSetAttribute(iGrid, "ALIGNMENT5", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 6, "Remote Address");
+    IupSetAttribute(iGrid, "WIDTH6", "60");
+    IupSetAttribute(iGrid, "ALIGNMENT6", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 7, "Remote Port");    
+    IupSetAttribute(iGrid, "WIDTH7", "55");
+    IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 8, "City");
+    IupSetAttribute(iGrid, "WIDTH8", "95");
+    IupSetAttribute(iGrid, "ALIGNMENT8", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 9, "Country");
+    IupSetAttribute(iGrid, "WIDTH9", "95");
+    IupSetAttribute(iGrid, "ALIGNMENT9", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 10, "ISP");
+    IupSetAttribute(iGrid, "WIDTH10", "100");
+    IupSetAttribute(iGrid, "ALIGNMENT10", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 11, "Organisation");    
+    IupSetAttribute(iGrid, "WIDTH11", "110");
+    IupSetAttribute(iGrid, "ALIGNMENT11", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 12, "Domain");
+    IupSetAttribute(iGrid, "WIDTH12", "100");
+    IupSetAttribute(iGrid, "ALIGNMENT12", "ALEFT");
+
+    IupSetAttributeId2(iGrid, "", 0, 13, "Type");
+    IupSetAttribute(iGrid, "WIDTH13", "40");
+    IupSetAttribute(iGrid, "ALIGNMENT13", "ALEFT");
+
+
     // Grid callbacks.
     IupSetCallback(iGrid, "ENTERITEM_CB", (Icallback)cb_EnterCell);
     IupSetCallback(iGrid, "LEAVEITEM_CB", (Icallback)cb_LeaveCell);
+    
 
     // Initialise dialog control layout.
-    iVbox = IupVbox(
-        iGrid,
-        iStatusbar,
-        NULL);
+    iVbox = IupVbox(iGrid, iStatusbar, NULL);
     IupSetAttribute(iVbox, "EXPAND", "YES");
     
+
     // Dialog attributes.
     iDialog = IupDialog(iVbox);
     IupSetAttributeHandle(iDialog, "MENU", menu);
@@ -1180,17 +1369,20 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iDialog, "ICON", "network.ico");
     IupSetAttribute(iDialog, "BACKGROUND", "255,128,255");
 
+
     // Timer attributes.
     iTimer = IupTimer();
-    IupSetAttribute(iTimer, "TIME", "4000");
+    IupSetAttribute(iTimer, "TIME", "5000");
     IupSetAttribute(iTimer, "RUN", "YES");
     IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
+    
 
     // Status bar attributes.
     IupSetAttribute(iStatusbar, "NAME", "STATUSBAR");
     IupSetAttribute(iStatusbar, "EXPAND", "HORIZONTAL");
     IupSetAttribute(iStatusbar, "PADDING", "10x5");
-    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2022 Les Farrell");
+    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2022 Les Farrell");    
+
 
     // Initialise Configuration system.
     iconfig = IupConfig();
@@ -1222,16 +1414,12 @@ int main(int argc, char* argv[]) {
     // Free the connectiondetails array.
     if (ConnectionDetails != NULL) free(ConnectionDetails);
 
-    // Free the DNS hash table contents.
-    HASH_ITER(hh, reverseDNS_Hash, DNS_Result, tmpDNS) {
-        HASH_DEL(reverseDNS_Hash, DNS_Result);
-        free(DNS_Result);
-    }
-
     // Close down the IUP toolkit.
     IupClose();
+
+    // Close down Winsock.
+    WSACleanup();
 
     return 0;
 }
 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
