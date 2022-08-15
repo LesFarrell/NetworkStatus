@@ -26,15 +26,15 @@ project "Netstat"
         files   {
                         "./src/**.h",
                         "./src/**.c",
+                        "./src/**.rc",
                         "./3rdparty/sqlite3/sqlite3.c",
                         "./3rdparty/cjson/cjson.c",
                 }
 
---[[ removefiles {
-                "./Unwanted1.c",
-                "./Unwanted2.c"
-                }
-]]
+		removefiles {
+						"./src/*(1).c",
+					}
+
 
         links   {
 -- System
@@ -101,7 +101,7 @@ filter "configurations:Release"
                 defines {
                                 "NDEBUG",
                                 "_WINSOCK_DEPRECATED_NO_WARNINGS",
-				"_CRT_SECURE_NO_WARNING",
+								"_CRT_SECURE_NO_WARNING",
                                 "SQLITE_DQS=0",
                                 "SQLITE_THREADSAFE=0",
                                 "SQLITE_LIKE_DOESNT_MATCH_BLOBS",

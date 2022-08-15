@@ -21,10 +21,14 @@
 Ihandle *iStatusbar;                        // StatusBar handle.
 Ihandle *iGrid;                             // Matrix handle.
 Ihandle *iconfig;                           // Applications configuration handle.
+Ihandle* iTimer;
 char sStatusBarText[256];                   // Holds the contents of the statusbar text.
 ConnectionData* ConnectionDetails = NULL;   // Array of filtered connection details.
 int NumberOfConnections = 0;                // Number of entries in connection details array.
-
+int SortColumn = 0;
+int SortDirection = 0;
+char CurrentIP[32] = { "0.0.0.0" };
+int CurrentLine = 0;
 
 WSADATA wsaData = { 0 };
 
@@ -74,7 +78,7 @@ int strsplit(char* str, char c, char*** arr)
     {
         if (*p == c)
         {
-            (*arr)[i] = (char*)malloc(sizeof(char) * token_len);
+            (*arr)[i] = (char*) malloc(sizeof(char) * token_len);
             if ((*arr)[i] == NULL) exit(1);
             token_len = 0;
             i++;
@@ -115,7 +119,7 @@ int strsplit(char* str, char c, char*** arr)
  *
  * Parameters:
  * MIB_TCPTABLE2 *pTcpTable2 - Table containing the connection details.
- * int idx  - Entry in the table we are testings.
+ * int idx  - Entry in the table we are testing.
  *
  * Returns:
  * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
@@ -283,7 +287,7 @@ int GetV6Connections(void)
 
         pTcpTable = (MIB_TCP6TABLE2*)MALLOC(sizeof(MIB_TCP6TABLE2));
         if (pTcpTable == NULL) {
-            printf("Error allocating memory\n");
+            fprintf(stderr,"Error allocating memory\n");
             return 1;
         }
 
@@ -295,7 +299,7 @@ int GetV6Connections(void)
             FREE(pTcpTable);
             pTcpTable = (MIB_TCP6TABLE2*)MALLOC(dwSize);
             if (pTcpTable == NULL) {
-                printf("Error allocating memory\n");
+                fprintf(stderr,"Error allocating memory\n");
                 return 1;
             }
         }
@@ -357,7 +361,7 @@ int GetV6Connections(void)
                     sprintf_s(ConnectionDetails[NumberOfConnections].PID, sizeof(ConnectionDetails[NumberOfConnections].PID) - 1, "%d ", (DWORD)pTcpTable->table[i].dwOwningPid);
 
                     if (InetNtop(AF_INET6, &pTcpTable->table[i].LocalAddr, ipstringbuffer, 46) == NULL) {
-                        printf("  InetNtop function failed for local IPv6 address\n");
+                        fprintf(stderr,"  InetNtop function failed for local IPv6 address\n");
                     } else {
                         to_narrow(ipstringbuffer, buffer, sizeof(buffer) - 1);
                         sprintf_s(ConnectionDetails[NumberOfConnections].LocalAddress, sizeof(ConnectionDetails[NumberOfConnections].LocalAddress) - 1, "%s", buffer);
@@ -374,16 +378,13 @@ int GetV6Connections(void)
                     }                    
                     sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, "%d ", ntohs((u_short)pTcpTable->table[i].dwRemotePort));
                     
-                    if (config.ShowPortDescriptions == 1) {
-                        strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
-                    }
-
+                    strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
                     NumberOfConnections++;
                 }
             }
         }
         else {
-            printf("\tGetTcp6Table failed with %d\n", dwRetVal);
+            fprintf(stderr,"\tGetTcp6Table failed with %d\n", dwRetVal);
             FREE(pTcpTable);
             return 1;
         }
@@ -429,7 +430,7 @@ int GetV4Connections(void)
    
     pTcpTable2 = (MIB_TCPTABLE2*)MALLOC(sizeof(MIB_TCPTABLE2));
     if (pTcpTable2 == NULL) {
-        printf("Error allocating memory\n");
+        fprintf(stderr,"Error allocating memory\n");
         return 1;
     }
 
@@ -440,7 +441,7 @@ int GetV4Connections(void)
         FREE(pTcpTable2);
         pTcpTable2 = (MIB_TCPTABLE2*)MALLOC(ulSize);
         if (pTcpTable2 == NULL) {
-            printf("Error allocating memory\n");
+            fprintf(stderr,"Error allocating memory\n");
             return 1;
         }
     }
@@ -482,14 +483,17 @@ int GetV4Connections(void)
                 }
 
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
-                if (config.DisableDNSLookup == 0 && DNSDONE == 0) {
+                if (config.DisableCountryLookup == 0 && DNSDONE == 0) {
                     LookupIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &DNSDONE);                    
                     strcpy_s(ConnectionDetails[NumberOfConnections].Country, sizeof(ConnectionDetails[NumberOfConnections].Country) - 1, IP_Details.country);
                     strcpy_s(ConnectionDetails[NumberOfConnections].City, sizeof(ConnectionDetails[NumberOfConnections].City) - 1, IP_Details.city);
                     strcpy_s(ConnectionDetails[NumberOfConnections].ORG, sizeof(ConnectionDetails[NumberOfConnections].ORG) - 1, IP_Details.org);
                     strcpy_s(ConnectionDetails[NumberOfConnections].ISP, sizeof(ConnectionDetails[NumberOfConnections].ISP) - 1, IP_Details.isp);
                     strcpy_s(ConnectionDetails[NumberOfConnections].DOMAIN, sizeof(ConnectionDetails[NumberOfConnections].DOMAIN) - 1, IP_Details.domain);
+                    strcpy_s(ConnectionDetails[NumberOfConnections].Description, sizeof(ConnectionDetails[NumberOfConnections].Description) - 1, IP_Details.description);
                 }
+
+
 
                 // Display Socket states.
                 switch (pTcpTable2->table[i].dwState) {
@@ -540,7 +544,7 @@ int GetV4Connections(void)
             }
         }
     } else {
-        printf("\tGetTcpTable failed with %d\n", dwRetVal);
+        fprintf(stderr,"\tGetTcpTable failed with %d\n", dwRetVal);
         FREE(pTcpTable2);
         return 1;
     }
@@ -569,8 +573,8 @@ int GetV4Connections(void)
  ---------------------------------------------------------------------------------------*/
 const char* GetPortDescription(int port) {
     int low = 0;
-    int high = 60;
-    int median = 0;    
+    int high = 64;
+    int median = 0;
     
     // Do a Binary search on the port description array.
     do {
@@ -582,7 +586,7 @@ const char* GetPortDescription(int port) {
             low = median + 1;
         }
     } while ((port != PortDescriptions[median].key) && low <= high);
-
+  
     if (port ==  PortDescriptions[median].key) {
         return PortDescriptions[median].value;
     } else {
@@ -633,6 +637,31 @@ int cb_LeaveCell(Ihandle* ih, int lin, int col) {
 }
 
 
+int cb_ValueChanged(Ihandle* ih) {
+    char buffer[1024] = { '\0' };
+    char SQL[1024] = { '\0' };
+    sqlite3_stmt* stmt = NULL;
+    sqlite3* DataBaseHandle;
+    int rc = 0;
+    int Found = 0;
+
+    SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
+    strcat_s(buffer, sizeof(buffer) - 1, "\\Network_Status.db3");
+
+    rc = sqlite3_open(buffer, &DataBaseHandle);
+
+    sprintf_s(SQL,sizeof(SQL) - 1, "UPDATE tblKnownIPs SET DESCRIPTION = '%s' WHERE IP = '%s';", IupGetAttributeId2(iGrid, "", CurrentLine, 8), IupGetAttributeId2(iGrid, "", CurrentLine, 6));    
+    rc=sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+    sqlite3_close(DataBaseHandle);
+
+    IupSetAttribute(iTimer, "RUN", "YES");
+        
+
+    //printf("Value Changed!\n");
+    return IUP_DEFAULT;
+}
+
+
 
 /*---------------------------------------------------------------------------------------
  * Function: cb_mnuaboutbox
@@ -647,7 +676,7 @@ int cb_LeaveCell(Ihandle* ih, int lin, int col) {
  ---------------------------------------------------------------------------------------*/
 void cb_mnuAboutBox(void) {
     char buffer[2048];
-    strcpy_s(buffer,sizeof(buffer) -1, "Network Status by Les Farrell");
+    strcpy_s(buffer, sizeof(buffer) - 1, "Network Status by Les Farrell");
     strcat_s(buffer, sizeof(buffer) - 1, "\n\nSQLite3 : \t\t");
     strcat_s(buffer, sizeof(buffer) - 1, sqlite3_version);
     strcat_s(buffer, sizeof(buffer) - 1, "\nIUP GUI Toolkit :\t");
@@ -675,6 +704,15 @@ void cb_mnuAboutBox(void) {
  *
  ---------------------------------------------------------------------------------------*/
 int cb_Timer(Ihandle *ih) {
+
+    NumberOfConnections = 0;
+
+    // Grab the IPv4 connections.
+    GetV4Connections();
+
+    // Grab the IPv6 connections.
+    // GetV6Connections();
+
     // Fill the grid with connection details.
     FillNetStatGrid();
     return IUP_DEFAULT;
@@ -697,6 +735,48 @@ int cb_mnuExit(void) {
   return IUP_CLOSE;
 }
 
+int cb_ClickCell(Ihandle* ih, int lin, int col, char* status)
+{
+    if (lin == 0)
+    {             
+        if (col == SortColumn)
+        {
+            if (SortDirection == 1) SortDirection = 0; else SortDirection = 1;            
+        }
+        SortColumn = col;
+        IupSetAttributeId(ih, "SORTCOLUMN", SortColumn, "ALL");
+        FillNetStatGrid();
+        return IUP_DEFAULT;
+    }
+ 
+    if (lin > 0 && col == 8)
+    {   
+
+        // VALUE
+        // CurrentIP
+
+        CurrentLine = lin;
+        strcpy_s(CurrentIP, sizeof(CurrentIP) - 1, (char *) IupGetAttributeId2(iGrid, "", lin, 6));
+                
+        //IupMessage("Test",  IupGetAttributeId2(iGrid, "", lin, 6));
+        
+        IupSetAttribute(iTimer, "RUN", "NO");
+        IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
+        IupSetAttribute(iGrid, "READONLY", "NO");
+        IupSetAttribute(iGrid, "EDITMODE", "YES");
+    }
+    else
+    {
+        IupSetAttribute(iTimer, "RUN", "YES");
+        IupSetAttribute(iGrid, "READONLY", "YES");
+        IupSetAttribute(iGrid, "EDITMODE", "NO");
+    }
+    
+    
+    
+    return IUP_DEFAULT;
+    
+}
 
 
 /*---------------------------------------------------------------------------------------
@@ -718,12 +798,16 @@ void cb_mnuSettings(void) {
     result = IupGetParam("Settings", NULL, 0,
         "Hide Connections to 127.0.0.0 / 0.0.0.0 : %b\n"
         "Disable IP Country Lookups : %b\n"
-        "Show Port Descriptions : %b\n"
+        "Hide Description Column: %b\n"
+        "Update Grid Every Secs: %i\n" 
+        "Show Port Types: %b\n"
         "Filter by Port Number : %b\n"
         "Port Filter List (Separated by commas) : %s\n"
         "Country Lookup Server : %s\n",
         &config.HideLocalConections,
-        &config.DisableDNSLookup, 
+        &config.DisableCountryLookup, 
+        &config.HideDescriptionColumn,
+        &config.GridTimer,        
         &config.ShowPortDescriptions, 
         &config.ApplyPortFilter,
         &config.PortFilter,
@@ -736,6 +820,56 @@ void cb_mnuSettings(void) {
         FillNetStatGrid();
     }
     return;
+}
+
+
+
+/*---------------------------------------------------------------------------------------
+ * Function: applySettings
+ * Apply the settings from the configuration file.
+ *
+ * Parameters:
+ *  void.
+ *
+ * Returns:
+ *  void.
+ *
+ ---------------------------------------------------------------------------------------*/
+void applySettings(void)
+{
+    
+    if (config.HideDescriptionColumn == 1)
+    {
+        IupSetAttribute(iGrid, "WIDTH8", "0");
+    }
+    else
+    {
+        IupSetAttribute(iGrid, "WIDTH8", "120");
+    }
+    
+
+    if (config.DisableCountryLookup == 1)
+    {
+        IupSetAttribute(iGrid, "WIDTH9", "0");
+        IupSetAttribute(iGrid, "WIDTH10", "0");
+        IupSetAttribute(iGrid, "WIDTH11", "0");
+        IupSetAttribute(iGrid, "WIDTH12", "0");
+        IupSetAttribute(iGrid, "WIDTH13", "0");
+    }
+    else
+    {
+        IupSetAttribute(iGrid, "WIDTH9", "95");
+        IupSetAttribute(iGrid, "WIDTH10", "95");
+        IupSetAttribute(iGrid, "WIDTH11", "120");
+        IupSetAttribute(iGrid, "WIDTH12", "120");
+        IupSetAttribute(iGrid, "WIDTH13", "120");
+    }
+
+    IupSetAttribute(iTimer, "RUN", "NO");
+    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
+    IupSetInt(iTimer, "TIME", config.GridTimer * 1000);
+    IupSetAttribute(iTimer, "RUN", "YES");
+    
 }
 
 
@@ -754,12 +888,16 @@ void cb_mnuSettings(void) {
 void loadSettings(void) {
     // Read the current settings.
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
-    config.DisableDNSLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
-    config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 1);       
-    config.ApplyPortFilter = IupConfigGetVariableIntDef(iconfig, "NetStat", "ApplyPortFilter", 1);
+    config.DisableCountryLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
+    config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 0);       
+    config.ApplyPortFilter = IupConfigGetVariableIntDef(iconfig, "NetStat", "ApplyPortFilter", 1);    
+    config.HideDescriptionColumn = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideDescriptionColumn", 0);
     strcpy_s(config.PortFilter, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "PortFilter","\0"));
     strcpy_s(config.WhoIs, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "LookupServer", "ipwho.is\0"));
+    config.GridTimer = IupConfigGetVariableIntDef(iconfig, "NetStat", "GridTimer", 10);
+    applySettings();
 }
+
 
 
 /*---------------------------------------------------------------------------------------
@@ -776,23 +914,27 @@ void loadSettings(void) {
 void saveSettings(void) {
     // Save the updated settings.
     IupConfigSetVariableInt(iconfig, "NetStat", "HideLocal", config.HideLocalConections);
-    IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableDNSLookup);
+    IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableCountryLookup);
     IupConfigSetVariableInt(iconfig, "NetStat", "ShowPortDescriptions", config.ShowPortDescriptions);
     IupConfigSetVariableInt(iconfig, "NetStat", "ApplyPortFilter", config.ApplyPortFilter);
     IupConfigSetVariableStr(iconfig, "NetStat", "PortFilter", config.PortFilter);
-    IupConfigSetVariableStr(iconfig, "NetStat", "LookupServer", config.WhoIs);
+    IupConfigSetVariableStr(iconfig, "NetStat", "LookupServer", config.WhoIs);    
+    IupConfigSetVariableInt(iconfig, "NetStat", "HideDescriptionColumn", config.HideDescriptionColumn);    
+    IupConfigSetVariableInt(iconfig, "NetStat", "GridTimer", config.GridTimer);
+    
     IupConfigSave(iconfig);
+    applySettings();
 }
 
 
 
 /*---------------------------------------------------------------------------------------
  * Function: to_narrow
- * Converts a wide character array to a char array for use in C strings
+ * Converts a wide character array to a char array for use in C strings.
  *
  * Parameters:
- * src  - Pointer to source wchar string
- * dest - Pointer to destination char string
+ * src  - Pointer to source wchar string.
+ * dest - Pointer to destination char string.
  * dest_len - Size of the destination string array.
  *
  * Returns:
@@ -810,7 +952,7 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
         else {
             dest[i] = '?';
 
-            // lead surrogate, skip the next code unit, which is the trail
+            // lead surrogate, skip the next code unit, which is the trail.
             if (code >= 0xD800 && code <= 0xD8FF) {                
                 i++;
             }
@@ -818,7 +960,6 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
         i++;
     }
     dest[i] = '\0';
-
     return i - 1;
 }
 
@@ -865,7 +1006,7 @@ void FindProcessName( DWORD processID, char* szProcessName) {
         to_narrow(pe32.szExeFile, szProcessName, MAX_PATH);
     }
     else {
-        strcpy_s(szProcessName, sizeof(szProcessName) - 1, "<Unknown>");
+        // strcpy_s(szProcessName, sizeof(szProcessName) - 1, "<Unknown>");
     }
 
     // Must clean up the snapshot handle.
@@ -888,21 +1029,26 @@ void FindProcessName( DWORD processID, char* szProcessName) {
  * 
  ---------------------------------------------------------------------------------------*/
 int FillNetStatGrid() {
-    NumberOfConnections = 0;
+	int row = 0;
+    static int lastcount = 0;
+    //NumberOfConnections = 0;
 
-    //Debug_LogMessage(LOG_INFO, "Enter FillNetStatGrid");
-
-    // Grab the IPv4 connections
+    /*
+    // Grab the IPv4 connections.
     GetV4Connections();
 
-    // Grab the IPv6 connections
+    // Grab the IPv6 connections.
     GetV6Connections();
+    */
 
-    // Set the number of visible lines in the grid
-    IupSetInt(iGrid, "NUMLIN", NumberOfConnections);
+    // Set the number of visible lines in the grid.
+    if (lastcount != NumberOfConnections) {
+        IupSetInt(iGrid, "NUMLIN", NumberOfConnections);
+        lastcount = NumberOfConnections;
+    }
 
-    // Loop and display each connection
-    for (int row = 0; row <= NumberOfConnections; row++)
+    // Loop and display each connection.
+    for (row = 0; row <= NumberOfConnections; row++)
     {
         IupSetAttributeId2(iGrid, "", row + 1, 1, ConnectionDetails[row].Process);          // Process Name.
         IupSetAttributeId2(iGrid, "", row + 1, 2, ConnectionDetails[row].PID);              // Display the Process PID.        
@@ -911,20 +1057,32 @@ int FillNetStatGrid() {
         IupSetAttributeId2(iGrid, "", row + 1, 5, ConnectionDetails[row].LocalPort);        // Local port.
         IupSetAttributeId2(iGrid, "", row + 1, 6, ConnectionDetails[row].RemoteAddress);    // Remote address.
         IupSetAttributeId2(iGrid, "", row + 1, 7, ConnectionDetails[row].RemotePort);       // Remote port.                      
-        IupSetAttributeId2(iGrid, "", row + 1, 8, ConnectionDetails[row].City);             // City.                
-        IupSetAttributeId2(iGrid, "", row + 1, 9, ConnectionDetails[row].Country);          // Country.                
-        IupSetAttributeId2(iGrid, "", row + 1, 10, ConnectionDetails[row].ISP);             // ISP
-        IupSetAttributeId2(iGrid, "", row + 1, 11, ConnectionDetails[row].ORG);             // Org                
-        IupSetAttributeId2(iGrid, "", row + 1, 12, ConnectionDetails[row].DOMAIN);          // Domain                
-        IupSetAttributeId2(iGrid, "", row + 1, 13, ConnectionDetails[row].ConnectionType);  // Connection Type.        
+        IupSetAttributeId2(iGrid, "", row + 1, 8, ConnectionDetails[row].Description);      // Description.                
+        IupSetAttributeId2(iGrid, "", row + 1, 9, ConnectionDetails[row].City);             // City.                
+        IupSetAttributeId2(iGrid, "", row + 1, 10, ConnectionDetails[row].Country);         // Country.                
+        IupSetAttributeId2(iGrid, "", row + 1, 11, ConnectionDetails[row].ISP);             // ISP
+        IupSetAttributeId2(iGrid, "", row + 1, 12, ConnectionDetails[row].ORG);             // Org                
+        IupSetAttributeId2(iGrid, "", row + 1, 13, ConnectionDetails[row].DOMAIN);          // Domain                
+        IupSetAttributeId2(iGrid, "", row + 1, 14, ConnectionDetails[row].ConnectionType);  // Connection Type.        
     }
     
+    IupSetAttributeId(iGrid, "SORTCOLUMN", SortColumn, "ALL");
+    if (SortDirection == 0) {
+        IupSetAttribute(iGrid, "SORTCOLUMNORDER", "ASCENDING");
+    }
+    else
+    {
+        IupSetAttribute(iGrid, "SORTCOLUMNORDER", "DESCENDING");
+    }
+
+
     // Force a grid redraw.
-    IupSetAttribute(iGrid, "REDRAW", "ALL");
+    //IupSetAttribute(iGrid, "REDRAW", "ALL");
 
     // Update the applications statusbar text.
     sprintf_s(sStatusBarText, sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
-    if (config.DisableDNSLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (* Reverse DNS Disabled)");
+
+    // if (config.DisableCountryLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (*)");
     IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
 
     return 0;
@@ -940,10 +1098,10 @@ int FillNetStatGrid() {
  * First checks the database and if nothing is found or the data is stale performs a DNS lookup.
  * 
  * Parameters:
- * IP - String containing the remote IP address.
+ *      IP - String containing the remote IP address.
  *
  * Returns:
- *  Status code
+ *      Status code
  * 
  ---------------------------------------------------------------------------------------*/
 int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {    
@@ -963,56 +1121,99 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {
         return 0;
     }
     
-    strcpy_s(buffer,sizeof(buffer) -1, "/");
-    strcat_s(buffer,sizeof(buffer)-1, IP);
+    strcpy_s(buffer,sizeof(buffer) - 1, "/");
+    strcat_s(buffer,sizeof(buffer) - 1, IP);
 
     strJSON = HTTP_GetContent(config.WhoIs, buffer);
     if (strJSON != NULL)
     {
         cJSON* json = cJSON_Parse(strJSON);
-        const cJSON* ip = cJSON_GetObjectItemCaseSensitive(json, "ip");
-        const cJSON* country = cJSON_GetObjectItemCaseSensitive(json, "country");
-        const cJSON* city = cJSON_GetObjectItemCaseSensitive(json, "city");
-        const cJSON* longitude = cJSON_GetObjectItemCaseSensitive(json, "longitude");
-        const cJSON* latitude = cJSON_GetObjectItemCaseSensitive(json, "latitude");
-        const cJSON* connection = cJSON_GetObjectItemCaseSensitive(json, "connection");
-        const cJSON* org = cJSON_GetObjectItemCaseSensitive(connection, "org");
-        const cJSON* isp = cJSON_GetObjectItemCaseSensitive(connection, "isp");
-        const cJSON* domain = cJSON_GetObjectItemCaseSensitive(connection, "domain");
 
+        
+        const cJSON* ip = cJSON_GetObjectItemCaseSensitive(json, "ip");
+        
+        const cJSON* success = cJSON_GetObjectItemCaseSensitive(json, "success");
 
         SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
         strcat_s(buffer, sizeof(buffer) - 1, "\\Network_Status.db3");
-                
+
         sqlite3_open(buffer, &DataBaseHandle);
-                
-        sprintf_s(SQL,sizeof(SQL)-1, "INSERT INTO tblKnownIPs ( IP, Country, City, ORG, ISP, Domain, Latitude, Longitude) VALUES (?,?,?,?, ?,?,?,?)");
-        sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmtIPDetails, 0);
+
+
+
+        if (success->valueint == 1) {
+            const cJSON* country = cJSON_GetObjectItemCaseSensitive(json, "country");
+            const cJSON* city = cJSON_GetObjectItemCaseSensitive(json, "city");
+            const cJSON* longitude = cJSON_GetObjectItemCaseSensitive(json, "longitude");
+            const cJSON* latitude = cJSON_GetObjectItemCaseSensitive(json, "latitude");
+            const cJSON* connection = cJSON_GetObjectItemCaseSensitive(json, "connection");
+            const cJSON* org = cJSON_GetObjectItemCaseSensitive(connection, "org");
+            const cJSON* isp = cJSON_GetObjectItemCaseSensitive(connection, "isp");
+            const cJSON* domain = cJSON_GetObjectItemCaseSensitive(connection, "domain");
+
+
+            sprintf_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain, Latitude, Longitude) VALUES (?,?,?,?,?,?,?,?)");
+            sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmtIPDetails, 0);
+
+            sqlite3_reset(stmtIPDetails);
+            sqlite3_clear_bindings(stmtIPDetails);
+            sqlite3_bind_text(stmtIPDetails, 1, ip->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 2, country->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 3, city->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 4, org->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 5, isp->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 6, domain->valuestring, -1, NULL);
+            sqlite3_bind_double(stmtIPDetails, 7, latitude->valuedouble);
+            sqlite3_bind_double(stmtIPDetails, 8, longitude->valuedouble);
+
+            rc = sqlite3_step(stmtIPDetails);
+            if (rc != SQLITE_DONE) fprintf(stderr, "%s\n", sqlite3_errmsg(DataBaseHandle));
+
+            // Finalise the statement.
+            sqlite3_finalize(stmtIPDetails);
+
+            memcpy(IP_Details->IP, ip->valuestring, sizeof(IP_Details->IP));
+            memcpy(IP_Details->country, country->valuestring, sizeof(IP_Details->country));            
+            memcpy(IP_Details->city,  city->valuestring,sizeof(IP_Details->city));
+            memcpy(IP_Details->org, org->valuestring, sizeof(IP_Details->org));
+            memcpy(IP_Details->isp, isp->valuestring, sizeof(IP_Details->isp));
+            memcpy(IP_Details->domain, domain->valuestring, sizeof(IP_Details->domain));
         
-        sqlite3_reset(stmtIPDetails);
-        sqlite3_clear_bindings(stmtIPDetails);
-        sqlite3_bind_text(stmtIPDetails, 1, ip->valuestring, -1, NULL);        
-        sqlite3_bind_text(stmtIPDetails, 2, country->valuestring, -1, NULL);
-        sqlite3_bind_text(stmtIPDetails, 3, city->valuestring, -1, NULL);
-        sqlite3_bind_text(stmtIPDetails, 4, org->valuestring, -1, NULL);
-        sqlite3_bind_text(stmtIPDetails, 5, isp->valuestring, -1, NULL);
-        sqlite3_bind_text(stmtIPDetails, 6, domain->valuestring, -1, NULL);
-        sqlite3_bind_double(stmtIPDetails, 7, latitude->valuedouble);
-        sqlite3_bind_double(stmtIPDetails, 8, longitude->valuedouble);
+        }
+        else if (success->valueint == 0) 
+        {
 
-        rc = sqlite3_step(stmtIPDetails);
-        if (rc != SQLITE_DONE) printf("%s\n", sqlite3_errmsg(DataBaseHandle));
+            const cJSON* message = cJSON_GetObjectItemCaseSensitive(json, "message");
+            sprintf_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain, Latitude, Longitude) VALUES (?,?,?,?,?,?,?,?)");
+            sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmtIPDetails, 0);
 
-        // Finalise the statement.
-        sqlite3_finalize(stmtIPDetails);
+            sqlite3_reset(stmtIPDetails);
+            sqlite3_clear_bindings(stmtIPDetails);
+            sqlite3_bind_text(stmtIPDetails, 1, ip->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 2, message->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 3, message->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 4, message->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 5, message->valuestring, -1, NULL);
+            sqlite3_bind_text(stmtIPDetails, 6, message->valuestring, -1, NULL);
+            sqlite3_bind_double(stmtIPDetails, 7, 91.00);
+            sqlite3_bind_double(stmtIPDetails, 8, 181.00);
 
-        *IP_Details->IP = *ip->valuestring;
-        *IP_Details->country = *country->valuestring;
-        *IP_Details->city = *city->valuestring;
-        *IP_Details->org = *org->valuestring;
-        *IP_Details->isp = *isp->valuestring;
-        *IP_Details->domain = *domain->valuestring;
-        
+            rc = sqlite3_step(stmtIPDetails);
+            if (rc != SQLITE_DONE) fprintf(stderr, "%s\n", sqlite3_errmsg(DataBaseHandle));
+
+            // Finalise the statement.
+            sqlite3_finalize(stmtIPDetails);
+            
+
+            memcpy(IP_Details->IP, ip->valuestring, sizeof(IP_Details->IP));
+            memcpy(IP_Details->country, message->valuestring, sizeof(IP_Details->country));
+            memcpy(IP_Details->city, message->valuestring, sizeof(IP_Details->city));
+            memcpy(IP_Details->org, message->valuestring, sizeof(IP_Details->org));
+            memcpy(IP_Details->isp, message->valuestring, sizeof(IP_Details->isp));
+            memcpy(IP_Details->domain, message->valuestring, sizeof(IP_Details->domain));
+        }
+
+
         // Close the database
         sqlite3_close(DataBaseHandle);
 
@@ -1036,7 +1237,7 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {
  * Nothing.
  *
  * Returns:
- *  1 = Failed to intialise WinSock, otherwise returns 0.
+ *  1 = Failed to initialise WinSock, otherwise returns 0.
  * 
  ---------------------------------------------------------------------------------------*/
 int InitialiseWinsock() {    
@@ -1044,10 +1245,9 @@ int InitialiseWinsock() {
 
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0) {
-        printf("WSAStartup failed: %d\n", iResult);
+        fprintf(stderr,"WSAStartup failed: %d\n", iResult);
         return 1;
     }
-
     return 0;
 }
 
@@ -1061,7 +1261,7 @@ int InitialiseWinsock() {
  * filename - Path to the file to check.
  *
  * Returns:
- * int  : 1 = Filexists otherwise 0
+ * int  : 1 = The file exists, otherwise returns 0
  *
  ---------------------------------------------------------------------------------------*/
 int FileExists(const char* filename)
@@ -1075,7 +1275,6 @@ int FileExists(const char* filename)
         fclose(fp);
         return 1;
     }
-    
     return 0;
 }
 
@@ -1087,7 +1286,6 @@ int FileExists(const char* filename)
  *
  * Parameters:
  * void
- * 
  *
  * Returns:
  * void
@@ -1103,10 +1301,11 @@ void CreateDatabase(void)
     char buffer[1024] = { '\0' };
     sqlite3* DataBaseHandle;
 
+    // Build up the path to the database.
     SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);    
     strcat_s(buffer,sizeof(buffer) -1, "\\Network_Status.db3");
 
-    
+    // If the database file doesn't exist then create it.
     if (FileExists(buffer) == 0)
     {
         rc = sqlite3_open(buffer, &DataBaseHandle);
@@ -1114,12 +1313,76 @@ void CreateDatabase(void)
         strcpy_s(SQL, sizeof(SQL) - 1, "CREATE TABLE IF NOT EXISTS tblKnownIPs (LastUpdated DATETIME DEFAULT (datetime('now','localtime')), IP TEXT UNIQUE, Description TEXT, ReverseDNS TEXT, Country TEXT, City TEXT, ORG TEXT, ISP TEXT, Domain TEXT, Latitude REAL, Longitude REAL);");
         rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
 
-
-        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('0.0.0.0', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost';");
+        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('0.0.0.0', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost');");
         rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
 
-        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('127.0.0.1', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost';");
+        strcpy_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain) VALUES ('127.0.0.1', 'Unknown', 'Unknown', 'localhost', 'localhost', 'localhost');");
         rc = sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+                   
+        strcpy_s(SQL, sizeof(SQL) - 1, "CREATE TABLE IF NOT EXISTS  tblKownPorts(Port INT CONSTRAINT Port PRIMARY KEY ON CONFLICT REPLACE,, Description TEXT);");                
+        sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (0,'');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (7, '(ECHO)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (17, '(QOTD)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (20,'(FTP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (21, '(FTP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (22, '(SSH)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (23, '(TELNET)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (25, '(SMTP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (42, '(WINS)');",NULL, NULL, NULL);                
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (43, '(WHOIS)');",NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (53, '(DNS)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (69, '(TFTP)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (79, '(FINGER)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (80, '(HTTP)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (107, '(RTELNET)')",NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (110, '(POP3)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (119, '(NNTP)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (123, '(NTP)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (135, '(RPC)');", NULL, NULL, NULL);        
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (137, '(NETBIOS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (138, '(NETBIOS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (139, '(NETBIOS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (143, '(IMAP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (152, '(IMAP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (161, '(SNMP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (162, '(SNMP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (389, '(LDAP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (443, '(HTTPS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (444, '(SNPP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (445, '(SMB)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (502, '(MODBUS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (520, '(RIP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (530, '(RPC)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (531, '(IRC)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (546, '(DCHP)');",NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (547, '(DCHP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (554, '(RTSP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (563, '(NNTP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (564, '(ORACLE)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (587, '(SMTP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (631, '(IPP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (636, '(LDAPS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (639, '(MSDP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (647, '(DHCP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (802, '(MODBUS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (853, '(DNS/TLS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1026, '(DCOM)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1029, '(DCOM)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1080, '(SOCKS)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1194, '(OPENVPN)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1234, '(VLC)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (1883, '(MQTT)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (2732, '(STEAM)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (3306, '(MYSQL)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (3301, '(SAP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (4070, '(Spotify)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (5000, '(UPNP)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (5655, '(Remote Utilities)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (5800, '(VNC)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (5900, '(VNC)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (6000, '(X11)');", NULL, NULL, NULL);
+        sqlite3_exec(DataBaseHandle, "INSERT INTO tblKnownPorts (Port , Description) Values (7680, '(Windows Update)');", NULL, NULL, NULL);
 
         rc = sqlite3_close_v2(DataBaseHandle);
     }
@@ -1150,12 +1413,11 @@ int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
     int Found = 0;
 
     SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
-    
     strcat_s(buffer,sizeof(buffer)-1,  "\\Network_Status.db3");
 
     rc = sqlite3_open(buffer, &DataBaseHandle);
 
-    sprintf_s(SQL, sizeof(SQL) - 1, "SELECT IP, Country, City, latitude, longitude, org, isp, domain  FROM tblKnownIPs WHERE IP like '%s';", IP);
+    sprintf_s(SQL, sizeof(SQL) - 1, "SELECT IP, Country, City, latitude, longitude, org, isp, domain, description  FROM tblKnownIPs WHERE IP like '%s';", IP);
 
     rc = sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmt, 0);
     if (rc == SQLITE_OK)
@@ -1168,7 +1430,7 @@ int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
             switch (rc)
             {
             case SQLITE_ROW:
-                Found = 1;
+                // Extract the data.
                 sprintf_s(IP_Details->IP, sizeof(IP_Details->IP) - 1, "d%s", sqlite3_column_text(stmt, 0));
                 sprintf_s(IP_Details->country, sizeof(IP_Details->country) - 1, "%s", sqlite3_column_text(stmt, 1));
                 sprintf_s(IP_Details->city, sizeof(IP_Details->city) - 1, "%s", sqlite3_column_text(stmt, 2));
@@ -1177,6 +1439,9 @@ int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
                 sprintf_s(IP_Details->org, sizeof(IP_Details->org) - 1, "%s", sqlite3_column_text(stmt, 5));
                 sprintf_s(IP_Details->isp, sizeof(IP_Details->isp) - 1, "%s", sqlite3_column_text(stmt, 6));
                 sprintf_s(IP_Details->domain, sizeof(IP_Details->domain) - 1, "%s", sqlite3_column_text(stmt, 7));
+                sprintf_s(IP_Details->description, sizeof(IP_Details->description) - 1, "%s", sqlite3_column_text(stmt, 8));
+                if (strstr(IP_Details->description, "(null)")) IP_Details->description[0] = '\0';
+                Found = 1;
                 break;
 
             default:
@@ -1185,18 +1450,7 @@ int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
 
         } while (rc != SQLITE_DONE);
     }
-    else 
-    {        
-        sprintf_s(IP_Details->IP, sizeof(IP_Details->IP) - 1, "%s", IP);
-        sprintf_s(IP_Details->country, sizeof(IP_Details->country) - 1, "Unknown");
-        sprintf_s(IP_Details->city, sizeof(IP_Details->city) - 1,  "Unknown");
-        sprintf_s(IP_Details->org, sizeof(IP_Details->org) - 1, "Unknown");
-        sprintf_s(IP_Details->isp, sizeof(IP_Details->isp) - 1, "Unknown");
-        sprintf_s(IP_Details->domain, sizeof(IP_Details->domain) - 1, "Unknown");
-        IP_Details->latitude = 91;
-        IP_Details->longitude = 181;
-    }
-    
+
     // Finalise the statement.
     sqlite3_finalize(stmt);
 
@@ -1222,7 +1476,7 @@ int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
 int main(int argc, char* argv[]) {
     Ihandle *iDialog;
     Ihandle *iVbox;
-    Ihandle *iTimer;
+    
     Ihandle *file_menu, *item_exit;
     Ihandle *filesub_menu, *menu;
     Ihandle *options_menu, *item_settings;
@@ -1233,22 +1487,18 @@ int main(int argc, char* argv[]) {
     // Initialise the IUP toolkit.
     if (IupOpen(&argc, &argv) == IUP_ERROR) return 0;
 
-
     // Stop the Not Responding Message.
     IupSetGlobal("PROCESSWINDOWSGHOSTING", "NO");
-
 
     // Initialise IUP Controls.
     IupControlsOpen();
 
-
     // Initialise Winsock.
     InitialiseWinsock();
 
-
-    // Create the sqlite database
+    // Create the SQLite database
     CreateDatabase();
-
+        
 
     // Setup the file menu.
     item_exit = IupItem("Exit", NULL);
@@ -1256,15 +1506,12 @@ int main(int argc, char* argv[]) {
     file_menu = IupMenu(item_exit, NULL);
     filesub_menu = IupSubmenu("File", file_menu);
 
-
     // Setup the options menu.
     item_settings = IupItem("Settings", NULL);
-
 
     IupSetCallback(item_settings, "ACTION", (Icallback)cb_mnuSettings);
     options_menu = IupMenu(item_settings, NULL);
     optionsub_menu = IupSubmenu("Options", options_menu);
-
 
     // Setup the help menu.
     item_about = IupItem("About", NULL);
@@ -1272,35 +1519,33 @@ int main(int argc, char* argv[]) {
     helpsub_menu = IupSubmenu("Help", help_menu);
     IupSetCallback(item_about, "ACTION", (Icallback)cb_mnuAboutBox);
 
-
     // Define the programs main menu.
     menu = IupMenu(filesub_menu, optionsub_menu, helpsub_menu, NULL);
 
-
     // Define the status bar.
-    iStatusbar = IupLabel("");
-    
+    iStatusbar = IupFlatLabel("");
+    IupSetAttribute(iStatusbar, "BORDER", "YES");
 
     // Define the matrix.
     iGrid = IupMatrixEx();
 
-
     // Grid attributes.
     IupSetAttribute(iGrid, "FLAT", "YES");
-    IupSetAttribute(iGrid, "NUMCOL", "13");    
+    IupSetAttribute(iGrid, "NUMCOL", "14");
     IupSetAttribute(iGrid, "EXPAND", "YES");
     IupSetAttribute(iGrid, "RESIZEMATRIX", "YES");
     IupSetAttribute(iGrid, "MARKMODE", "LIN");
-    IupSetAttribute(iGrid, "READONLY", "YES");
+    IupSetAttribute(iGrid, "READONLY", "NO");
     IupSetAttribute(iGrid, "MENUCONTEXT", "NO");
     IupSetAttribute(iGrid, "MARKMULTIPLE", "NO");
+
     
     
     // Grid column titles, alignments and widths
     IupSetAttributeId2(iGrid, "", 0, 1, "Process");
     IupSetAttribute(iGrid, "WIDTH1", "115");
     IupSetAttribute(iGrid, "ALIGNMENT1", "ALEFT");
-    
+
     IupSetAttributeId2(iGrid, "", 0, 2, "PID");
     IupSetAttribute(iGrid, "WIDTH2", "30");
     IupSetAttribute(iGrid, "ALIGNMENT2", "ALEFT");
@@ -1310,55 +1555,64 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "ALIGNMENT3", "ALEFT");
     
     IupSetAttributeId2(iGrid, "", 0, 4, "Local Address");
-    IupSetAttribute(iGrid, "WIDTH4", "55");
+    IupSetAttribute(iGrid, "WIDTH4", "75");
     IupSetAttribute(iGrid, "ALIGNMENT4", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 5, "Local Port");
-    IupSetAttribute(iGrid, "WIDTH5", "55");
+    IupSetAttribute(iGrid, "WIDTH5", "80");
     IupSetAttribute(iGrid, "ALIGNMENT5", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 6, "Remote Address");
-    IupSetAttribute(iGrid, "WIDTH6", "60");
+    IupSetAttribute(iGrid, "WIDTH6", "75");
     IupSetAttribute(iGrid, "ALIGNMENT6", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 7, "Remote Port");    
-    IupSetAttribute(iGrid, "WIDTH7", "55");
+    IupSetAttribute(iGrid, "WIDTH7", "80");
     IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 8, "City");
-    IupSetAttribute(iGrid, "WIDTH8", "95");
+    // Description hidden for the time being
+    IupSetAttributeId2(iGrid, "", 0, 8, "Description");
+    IupSetAttribute(iGrid, "WIDTH8", "0");
     IupSetAttribute(iGrid, "ALIGNMENT8", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 9, "Country");
+    IupSetAttributeId2(iGrid, "", 0, 9, "City");
     IupSetAttribute(iGrid, "WIDTH9", "95");
     IupSetAttribute(iGrid, "ALIGNMENT9", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 10, "ISP");
-    IupSetAttribute(iGrid, "WIDTH10", "100");
+    IupSetAttributeId2(iGrid, "", 0, 10, "Country");
+    IupSetAttribute(iGrid, "WIDTH10", "95");
     IupSetAttribute(iGrid, "ALIGNMENT10", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 11, "Organisation");    
-    IupSetAttribute(iGrid, "WIDTH11", "110");
+    IupSetAttributeId2(iGrid, "", 0, 11, "ISP");
+    IupSetAttribute(iGrid, "WIDTH11", "120");
     IupSetAttribute(iGrid, "ALIGNMENT11", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 12, "Domain");
-    IupSetAttribute(iGrid, "WIDTH12", "100");
+    IupSetAttributeId2(iGrid, "", 0, 12, "Organisation");    
+    IupSetAttribute(iGrid, "WIDTH12", "120");
     IupSetAttribute(iGrid, "ALIGNMENT12", "ALEFT");
 
-    IupSetAttributeId2(iGrid, "", 0, 13, "Type");
-    IupSetAttribute(iGrid, "WIDTH13", "40");
+    IupSetAttributeId2(iGrid, "", 0, 13, "Domain");
+    IupSetAttribute(iGrid, "WIDTH13", "120");
     IupSetAttribute(iGrid, "ALIGNMENT13", "ALEFT");
 
+    IupSetAttributeId2(iGrid, "", 0, 14, "Type");
+    IupSetAttribute(iGrid, "WIDTH14", "40");
+    IupSetAttribute(iGrid, "ALIGNMENT14", "ALEFT");
+
+    IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
+    
 
     // Grid callbacks.
     IupSetCallback(iGrid, "ENTERITEM_CB", (Icallback)cb_EnterCell);
     IupSetCallback(iGrid, "LEAVEITEM_CB", (Icallback)cb_LeaveCell);
-    
+    IupSetCallback(iGrid, "CLICK_CB", (Icallback)cb_ClickCell);
+    IupSetCallback(iGrid, "VALUECHANGED_CB", (Icallback)cb_ValueChanged);
+
+
 
     // Initialise dialog control layout.
     iVbox = IupVbox(iGrid, iStatusbar, NULL);
     IupSetAttribute(iVbox, "EXPAND", "YES");
-    
 
     // Dialog attributes.
     iDialog = IupDialog(iVbox);
@@ -1366,38 +1620,47 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iDialog, "SIZE", "745xHALF");
     IupSetAttribute(iDialog, "TITLE", "Network Status by Les Farrell");
     IupSetAttribute(iDialog, "SHRINK", "YES");
-    IupSetAttribute(iDialog, "ICON", "network.ico");
+    //IupSetAttribute(iDialog, "ICON", "network.ico");
     IupSetAttribute(iDialog, "BACKGROUND", "255,128,255");
 
-
-    // Timer attributes.
-    iTimer = IupTimer();
-    IupSetAttribute(iTimer, "TIME", "5000");
-    IupSetAttribute(iTimer, "RUN", "YES");
-    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
     
 
     // Status bar attributes.
     IupSetAttribute(iStatusbar, "NAME", "STATUSBAR");
     IupSetAttribute(iStatusbar, "EXPAND", "HORIZONTAL");
     IupSetAttribute(iStatusbar, "PADDING", "10x5");
-    IupSetAttribute(iStatusbar, "TITLE", "Copyright 2022 Les Farrell");    
-
+    IupSetAttribute(iStatusbar, "TITLE", "Network Status - Copyright 2022 Les Farrell");
 
     // Initialise Configuration system.
     iconfig = IupConfig();
     IupSetAttribute(iconfig, "APP_NAME", "NetStat");
 
+    
     // Load the configuration settings.
     IupConfigLoad(iconfig);
     loadSettings();
 
+
+    // Timer attributes.
+    iTimer = IupTimer();
+    IupSetInt(iTimer, "TIME", config.GridTimer * 1000);   
+    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
+    IupSetAttribute(iTimer, "RUN", "YES");
+
+
     // Show the main dialog.
     IupShow(iDialog);
-        
-    // Fill the tcp details.
-    FillNetStatGrid();
 
+    // Grab the IPv4 connections.
+    GetV4Connections();
+
+    // Grab the IPv6 connections.
+    //GetV6Connections();
+
+    // Fill the tcp details.
+    FillNetStatGrid();    
+
+    
     // IUP main loop.
     IupMainLoop();
 

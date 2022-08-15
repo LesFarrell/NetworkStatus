@@ -12,6 +12,7 @@ typedef struct  IPDetails_struct {
     char org[512];
     char isp[512];
     char domain[512];
+    char description[1024];
 } IPDetails_struct;
 IPDetails_struct IP_Details;
 
@@ -36,17 +37,21 @@ void cb_mnuSettings(void);
 int cb_mnuExit(void);
 int cb_EnterCell(Ihandle* ih, int lin, int col);
 int cb_LeaveCell(Ihandle* ih, int lin, int col);
+int cb_ValueChanged(Ihandle* ih);
 int FilterEntryV4(MIB_TCPTABLE2* pTcpTable2, int idx);
 int FilterEntryV6(MIB_TCP6TABLE2* pTcpTable, int idx);
 void CreateDatabase(void);
 int FileExists(const char* filename);
-
+void applySettings(void);
+int cb_ClickCell(Ihandle* ih, int lin, int col, char* status);
 
 
 typedef struct configuration {
     int HideLocalConections;
-    int DisableDNSLookup;
+    int DisableCountryLookup;
+    int HideDescriptionColumn;
     int ShowPortDescriptions;
+    int GridTimer;
     int ApplyPortFilter;
     char PortFilter[NI_MAXHOST];
     char WhoIs[NI_MAXHOST];
@@ -59,6 +64,7 @@ typedef struct KeyValue
     int key;
     char* value;
 } KeyValue;
+
 
 const KeyValue PortDescriptions[] = {
     {0,""},
@@ -116,12 +122,17 @@ const KeyValue PortDescriptions[] = {
     {2732, "(STEAM)"},
     {3306, "(MYSQL)"},
     {3301, "(SAP)"},
+    {4070, "(Spotify)"},
     {5000, "(UPNP)"},
+    {5655, "(Remote Utilities)"},
     {5800, "(VNC)"},
     {5900, "(VNC)"},
     {6000, "(X11)"},
+    {6196, "(AISWEB)"},
+    {7680, "(Windows Update)"},
     {8080, "(HTTP)"},
 };
+
 
 typedef struct ConnectionData{
     char Process[MAX_PATH];
@@ -137,6 +148,7 @@ typedef struct ConnectionData{
     char DOMAIN[MAX_PATH];
     char ConnectionStatus[MAX_PATH];
     char ConnectionType[MAX_PATH];
+    char Description[1024];
 } ConnectionData;
 
 #endif
