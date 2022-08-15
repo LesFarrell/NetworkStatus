@@ -597,7 +597,7 @@ const char* GetPortDescription(int port) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: cb_EnterCell
+ * Function: cb_GridEnterCell
  * Called when the focus enters a cell.
  *
  * Parameters:
@@ -609,7 +609,7 @@ const char* GetPortDescription(int port) {
  * IUP_DEFAULT
  *
  ---------------------------------------------------------------------------------------*/
-int cb_EnterCell(Ihandle* ih, int lin, int col) {
+int cb_GridEnterCell(Ihandle* ih, int lin, int col) {
     // Mark the selected line in the matrix.    
     IupSetAttributeId2(ih, "MARK", lin, 0, "1");
     return IUP_DEFAULT;
@@ -618,7 +618,7 @@ int cb_EnterCell(Ihandle* ih, int lin, int col) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: cb_LeaveCell
+ * Function: cb_GridLeaveCell
  * Called when the focus leaves a cell.
  *
  * Parameters:
@@ -630,14 +630,14 @@ int cb_EnterCell(Ihandle* ih, int lin, int col) {
  * IUP_DEFAULT
  *
  ---------------------------------------------------------------------------------------*/
-int cb_LeaveCell(Ihandle* ih, int lin, int col) {
+int cb_GridLeaveCell(Ihandle* ih, int lin, int col) {
     // Unmark the selected line in the matrix.
     IupSetAttributeId2(ih, "MARK", lin, 0, "0");
     return IUP_DEFAULT;
 }
 
 
-int cb_ValueChanged(Ihandle* ih) {
+int cb_GridValueChanged(Ihandle* ih) {
     char buffer[1024] = { '\0' };
     char SQL[1024] = { '\0' };
     sqlite3_stmt* stmt = NULL;
@@ -656,7 +656,6 @@ int cb_ValueChanged(Ihandle* ih) {
 
     IupSetAttribute(iTimer, "RUN", "YES");
         
-
     //printf("Value Changed!\n");
     return IUP_DEFAULT;
 }
@@ -693,7 +692,7 @@ void cb_mnuAboutBox(void) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: cb_Timer
+ * Function: cb_TimerTriggered
  * Call back function for the IUP timer.
  *
  * Parameters:
@@ -703,7 +702,7 @@ void cb_mnuAboutBox(void) {
  * IUP_DEFAULT
  *
  ---------------------------------------------------------------------------------------*/
-int cb_Timer(Ihandle *ih) {
+int cb_TimerTriggered(Ihandle *ih) {
 
     NumberOfConnections = 0;
 
@@ -735,7 +734,7 @@ int cb_mnuExit(void) {
   return IUP_CLOSE;
 }
 
-int cb_ClickCell(Ihandle* ih, int lin, int col, char* status)
+int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status)
 {
     if (lin == 0)
     {             
@@ -798,7 +797,7 @@ void cb_mnuSettings(void) {
     result = IupGetParam("Settings", NULL, 0,
         "Hide Connections to 127.0.0.0 / 0.0.0.0 : %b\n"
         "Disable IP Country Lookups : %b\n"
-        "Hide Description Column: %b\n"
+        "Hide Remote IP Description Column: %b\n"
         "Update Grid Every Secs: %i\n" 
         "Show Port Types: %b\n"
         "Filter by Port Number : %b\n"
@@ -866,7 +865,7 @@ void applySettings(void)
     }
 
     IupSetAttribute(iTimer, "RUN", "NO");
-    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
+    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_TimerTriggered);
     IupSetInt(iTimer, "TIME", config.GridTimer * 1000);
     IupSetAttribute(iTimer, "RUN", "YES");
     
@@ -1571,7 +1570,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
 
     // Description hidden for the time being
-    IupSetAttributeId2(iGrid, "", 0, 8, "Description");
+    IupSetAttributeId2(iGrid, "", 0, 8, "Description for Remote IP");
     IupSetAttribute(iGrid, "WIDTH8", "0");
     IupSetAttribute(iGrid, "ALIGNMENT8", "ALEFT");
 
@@ -1603,10 +1602,10 @@ int main(int argc, char* argv[]) {
     
 
     // Grid callbacks.
-    IupSetCallback(iGrid, "ENTERITEM_CB", (Icallback)cb_EnterCell);
-    IupSetCallback(iGrid, "LEAVEITEM_CB", (Icallback)cb_LeaveCell);
-    IupSetCallback(iGrid, "CLICK_CB", (Icallback)cb_ClickCell);
-    IupSetCallback(iGrid, "VALUECHANGED_CB", (Icallback)cb_ValueChanged);
+    IupSetCallback(iGrid, "ENTERITEM_CB", (Icallback)cb_GridEnterCell);
+    IupSetCallback(iGrid, "LEAVEITEM_CB", (Icallback)cb_GridLeaveCell);
+    IupSetCallback(iGrid, "CLICK_CB", (Icallback)cb_GridClickCell);
+    IupSetCallback(iGrid, "VALUECHANGED_CB", (Icallback)cb_GridValueChanged);
 
 
 
@@ -1644,7 +1643,7 @@ int main(int argc, char* argv[]) {
     // Timer attributes.
     iTimer = IupTimer();
     IupSetInt(iTimer, "TIME", config.GridTimer * 1000);   
-    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_Timer);
+    IupSetCallback(iTimer, "ACTION_CB", (Icallback)cb_TimerTriggered);
     IupSetAttribute(iTimer, "RUN", "YES");
 
 

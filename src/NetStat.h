@@ -32,18 +32,18 @@ int GetV4Connections(void);
 int GetV6Connections(void);
 int GetV6Connections(void);
 void cb_mnuAboutBox(void);
-int cb_Timer(Ihandle* ih);
+int cb_TimerTriggered(Ihandle* ih);
 void cb_mnuSettings(void);
 int cb_mnuExit(void);
-int cb_EnterCell(Ihandle* ih, int lin, int col);
-int cb_LeaveCell(Ihandle* ih, int lin, int col);
-int cb_ValueChanged(Ihandle* ih);
+int cb_GridEnterCell(Ihandle* ih, int lin, int col);
+int cb_GridLeaveCell(Ihandle* ih, int lin, int col);
+int cb_GridValueChanged(Ihandle* ih);
 int FilterEntryV4(MIB_TCPTABLE2* pTcpTable2, int idx);
 int FilterEntryV6(MIB_TCP6TABLE2* pTcpTable, int idx);
 void CreateDatabase(void);
 int FileExists(const char* filename);
 void applySettings(void);
-int cb_ClickCell(Ihandle* ih, int lin, int col, char* status);
+int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status);
 
 
 typedef struct configuration {
