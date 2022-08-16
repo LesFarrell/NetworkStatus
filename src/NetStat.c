@@ -283,7 +283,7 @@ int GetV6Connections(void)
         char buffer[256] = { '\0' };
         wchar_t ipstringbuffer[46];
         int i;
-        int DNSDONE = 0;
+        int COUNTRY_LOOKUP_DONE = 0;
 
         pTcpTable = (MIB_TCP6TABLE2*)MALLOC(sizeof(MIB_TCP6TABLE2));
         if (pTcpTable == NULL) {
@@ -425,7 +425,7 @@ int GetV4Connections(void)
     struct in_addr IpAddr;
     char buffer[256] = { '\0' };
     int i = 0;
-    int DNSDONE = 0;
+    int COUNTRY_LOOKUP_DONE = 0;
     char HostName[NI_MAXHOST] = { '\0' };
    
     pTcpTable2 = (MIB_TCPTABLE2*)MALLOC(sizeof(MIB_TCPTABLE2));
@@ -483,8 +483,8 @@ int GetV4Connections(void)
                 }
 
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
-                if (config.DisableCountryLookup == 0 && DNSDONE == 0) {
-                    LookupIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &DNSDONE);                    
+                if (config.DisableCountryLookup == 0 && COUNTRY_LOOKUP_DONE == 0) {
+                    LookupIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &COUNTRY_LOOKUP_DONE);                    
                     strcpy_s(ConnectionDetails[NumberOfConnections].Country, sizeof(ConnectionDetails[NumberOfConnections].Country) - 1, IP_Details.country);
                     strcpy_s(ConnectionDetails[NumberOfConnections].City, sizeof(ConnectionDetails[NumberOfConnections].City) - 1, IP_Details.city);
                     strcpy_s(ConnectionDetails[NumberOfConnections].ORG, sizeof(ConnectionDetails[NumberOfConnections].ORG) - 1, IP_Details.org);
@@ -637,26 +637,42 @@ int cb_GridLeaveCell(Ihandle* ih, int lin, int col) {
 }
 
 
+/*---------------------------------------------------------------------------------------
+ * Function: cb_GridValueChanged
+ * Processes the Value Changed callback for the grid
+ *
+ * Parameters:
+ * Ihandle* ih 	- Grids handle 
+ *
+ * Returns:
+ * Nothing
+ * 
+ * Notes:
+ * Updates the description field in the database with the new cell text.
+ ---------------------------------------------------------------------------------------*/
 int cb_GridValueChanged(Ihandle* ih) {
     char buffer[1024] = { '\0' };
     char SQL[1024] = { '\0' };
     sqlite3_stmt* stmt = NULL;
     sqlite3* DataBaseHandle;
-    int rc = 0;
-    int Found = 0;
-
+    	
+	// Find the database
     SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
     strcat_s(buffer, sizeof(buffer) - 1, "\\Network_Status.db3");
 
-    rc = sqlite3_open(buffer, &DataBaseHandle);
+	// Open the database
+    sqlite3_open(buffer, &DataBaseHandle);
 
+	// Update the description field for the selected remote IP.
     sprintf_s(SQL,sizeof(SQL) - 1, "UPDATE tblKnownIPs SET DESCRIPTION = '%s' WHERE IP = '%s';", IupGetAttributeId2(iGrid, "", CurrentLine, 8), IupGetAttributeId2(iGrid, "", CurrentLine, 6));    
-    rc=sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
-    sqlite3_close(DataBaseHandle);
+    sqlite3_exec(DataBaseHandle, SQL, NULL, NULL, NULL);
+    
+	// Close the database
+	sqlite3_close(DataBaseHandle);
 
+	// Restart the timer.
     IupSetAttribute(iTimer, "RUN", "YES");
         
-    //printf("Value Changed!\n");
     return IUP_DEFAULT;
 }
 
@@ -734,44 +750,76 @@ int cb_mnuExit(void) {
   return IUP_CLOSE;
 }
 
+
+/*---------------------------------------------------------------------------------------
+ * Function: cb_GridClickCell
+ * Processes the click on cell callback.
+ *
+ * Parameters:
+ * Ihandle* ih 	- Grids handle 
+ * int lin		- Grid Line Clicked
+ * int col, 	- Grid Column Clicked
+ * char* status - Mouse Status
+ *
+ * Returns:
+ * Nothing
+ * 
+ ---------------------------------------------------------------------------------------*/
 int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status)
 {
+	// If this is the first line then process the column sort routines.
     if (lin == 0)
     {             
+		// Clicked on the same column twice so reverse the sort
         if (col == SortColumn)
         {
             if (SortDirection == 1) SortDirection = 0; else SortDirection = 1;            
         }
+		// Sort the current column
         SortColumn = col;
+		
+		// Tell Iup to sort on this column.
         IupSetAttributeId(ih, "SORTCOLUMN", SortColumn, "ALL");
+		
+		// Refill the Grid
         FillNetStatGrid();
+		
         return IUP_DEFAULT;
     }
- 
+
+	// Has the Description column been clicked
     if (lin > 0 && col == 8)
     {   
-
-        // VALUE
-        // CurrentIP
-
+		// Store the current Line.
         CurrentLine = lin;
+		
+		// Store the current remote IP address for this line.
         strcpy_s(CurrentIP, sizeof(CurrentIP) - 1, (char *) IupGetAttributeId2(iGrid, "", lin, 6));
                 
-        //IupMessage("Test",  IupGetAttributeId2(iGrid, "", lin, 6));
         
+        // Stop the timer
         IupSetAttribute(iTimer, "RUN", "NO");
+		
+		// Edit the column as text.
         IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
-        IupSetAttribute(iGrid, "READONLY", "NO");
+        
+		// Make sure we can edit the grid
+		IupSetAttribute(iGrid, "READONLY", "NO");
+		
+		// Enter Edit mode.
         IupSetAttribute(iGrid, "EDITMODE", "YES");
-    }
+    }	
     else
     {
-        IupSetAttribute(iTimer, "RUN", "YES");
+		// Restart the timer
+		IupSetAttribute(iTimer, "RUN", "YES");
+		
+		// Make the grid readonly again.
         IupSetAttribute(iGrid, "READONLY", "YES");
+		
+		// Start editing.
         IupSetAttribute(iGrid, "EDITMODE", "NO");
     }
-    
-    
     
     return IUP_DEFAULT;
     
@@ -799,7 +847,7 @@ void cb_mnuSettings(void) {
         "Disable IP Country Lookups : %b\n"
         "Hide Remote IP Description Column: %b\n"
         "Update Grid Every Secs: %i\n" 
-        "Show Port Types: %b\n"
+        "Show Port Usage Descriptions: %b\n"
         "Filter by Port Number : %b\n"
         "Port Filter List (Separated by commas) : %s\n"
         "Country Lookup Server : %s\n",
@@ -884,8 +932,7 @@ void applySettings(void)
  *  void.
  *
  ---------------------------------------------------------------------------------------*/
-void loadSettings(void) {
-    // Read the current settings.
+void loadSettings(void) {    
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableCountryLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
     config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 0);       
@@ -1030,15 +1077,6 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 int FillNetStatGrid() {
 	int row = 0;
     static int lastcount = 0;
-    //NumberOfConnections = 0;
-
-    /*
-    // Grab the IPv4 connections.
-    GetV4Connections();
-
-    // Grab the IPv6 connections.
-    GetV6Connections();
-    */
 
     // Set the number of visible lines in the grid.
     if (lastcount != NumberOfConnections) {
@@ -1074,14 +1112,10 @@ int FillNetStatGrid() {
         IupSetAttribute(iGrid, "SORTCOLUMNORDER", "DESCENDING");
     }
 
-
-    // Force a grid redraw.
-    //IupSetAttribute(iGrid, "REDRAW", "ALL");
-
     // Update the applications statusbar text.
     sprintf_s(sStatusBarText, sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
 
-    // if (config.DisableCountryLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (*)");
+    if (config.DisableCountryLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (Country Lookups Disabled.)");
     IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
 
     return 0;
@@ -1094,7 +1128,8 @@ int FillNetStatGrid() {
  * lookup details for the passed IP address.
  *
  * Notes:
- * First checks the database and if nothing is found or the data is stale performs a DNS lookup.
+ * First checks the database and if nothing is found or the data is stale performs a country lookup.
+ * And processes the returned JSON.
  * 
  * Parameters:
  *      IP - String containing the remote IP address.
@@ -1103,7 +1138,7 @@ int FillNetStatGrid() {
  *      Status code
  * 
  ---------------------------------------------------------------------------------------*/
-int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {    
+int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP_DONE) {    
     int Found = 0;
     char *strJSON = NULL;
     char buffer[1024] = { '\0' };
@@ -1116,7 +1151,7 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {
     
     Found = SearchDatabase(IP, IP_Details);
     if (Found == 1) {
-        *DNSDONE = 0;
+        *COUNTRY_LOOKUP_DONE = 0;
         return 0;
     }
     
@@ -1128,17 +1163,13 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {
     {
         cJSON* json = cJSON_Parse(strJSON);
 
-        
-        const cJSON* ip = cJSON_GetObjectItemCaseSensitive(json, "ip");
-        
+        const cJSON* ip = cJSON_GetObjectItemCaseSensitive(json, "ip");        
         const cJSON* success = cJSON_GetObjectItemCaseSensitive(json, "success");
 
         SHGetFolderPathA(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, buffer);
         strcat_s(buffer, sizeof(buffer) - 1, "\\Network_Status.db3");
 
         sqlite3_open(buffer, &DataBaseHandle);
-
-
 
         if (success->valueint == 1) {
             const cJSON* country = cJSON_GetObjectItemCaseSensitive(json, "country");
@@ -1220,7 +1251,7 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *DNSDONE) {
 
         cJSON_Delete(json);
         
-        *DNSDONE = 1;
+        *COUNTRY_LOOKUP_DONE = 1;
     }
     
     return 0;    
@@ -1537,8 +1568,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "READONLY", "NO");
     IupSetAttribute(iGrid, "MENUCONTEXT", "NO");
     IupSetAttribute(iGrid, "MARKMULTIPLE", "NO");
-
-    
+    IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
     
     // Grid column titles, alignments and widths
     IupSetAttributeId2(iGrid, "", 0, 1, "Process");
@@ -1568,9 +1598,8 @@ int main(int argc, char* argv[]) {
     IupSetAttributeId2(iGrid, "", 0, 7, "Remote Port");    
     IupSetAttribute(iGrid, "WIDTH7", "80");
     IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
-
-    // Description hidden for the time being
-    IupSetAttributeId2(iGrid, "", 0, 8, "Description for Remote IP");
+    
+    IupSetAttributeId2(iGrid, "", 0, 8, "Description of Remote IP");
     IupSetAttribute(iGrid, "WIDTH8", "0");
     IupSetAttribute(iGrid, "ALIGNMENT8", "ALEFT");
 
@@ -1598,15 +1627,12 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "WIDTH14", "40");
     IupSetAttribute(iGrid, "ALIGNMENT14", "ALEFT");
 
-    IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
-    
 
     // Grid callbacks.
     IupSetCallback(iGrid, "ENTERITEM_CB", (Icallback)cb_GridEnterCell);
     IupSetCallback(iGrid, "LEAVEITEM_CB", (Icallback)cb_GridLeaveCell);
     IupSetCallback(iGrid, "CLICK_CB", (Icallback)cb_GridClickCell);
     IupSetCallback(iGrid, "VALUECHANGED_CB", (Icallback)cb_GridValueChanged);
-
 
 
     // Initialise dialog control layout.
@@ -1619,9 +1645,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iDialog, "SIZE", "745xHALF");
     IupSetAttribute(iDialog, "TITLE", "Network Status by Les Farrell");
     IupSetAttribute(iDialog, "SHRINK", "YES");
-    //IupSetAttribute(iDialog, "ICON", "network.ico");
     IupSetAttribute(iDialog, "BACKGROUND", "255,128,255");
-
     
 
     // Status bar attributes.

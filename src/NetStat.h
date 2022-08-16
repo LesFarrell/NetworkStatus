@@ -21,7 +21,7 @@ IPDetails_struct IP_Details;
 // Function protypes.
 int FillNetStatGrid();
 void FindProcessName( DWORD processID, char *szProcessName);
-int LookupIPDetails(char* IP, IPDetails_struct *IP_Details, int* DNSDONE);
+int LookupIPDetails(char* IP, IPDetails_struct *IP_Details, int* COUNTRY_LOOKUP_DONE);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
 void loadSettings(void);
