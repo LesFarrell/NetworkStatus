@@ -114,7 +114,7 @@ int strsplit(char* str, char c, char*** arr)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: FilterEntryV4
+ * Function: FilterIPv4Entries
  * Tests to see if the entry should be filtered.
  *
  * Parameters:
@@ -125,7 +125,7 @@ int strsplit(char* str, char c, char*** arr)
  * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
  *
  *---------------------------------------------------------------------------------------*/
-int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
+int FilterIPv4Entries(MIB_TCPTABLE2 *pTcpTable2, int idx)
 {    
     char RemoteAddress[256] = { '\0' };
     char LocalAddress[256] = { '\0' };
@@ -188,7 +188,7 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: FilterEntryV6
+ * Function: FilterIPv6Entries
  * Tests to see if the entry should be filtered.
  *
  * Parameters:
@@ -199,7 +199,7 @@ int FilterEntryV4(MIB_TCPTABLE2 *pTcpTable2, int idx)
  * 1 = Don't show the entry as it's been filtered. 0 = Show the entry as normal.
  *
  ---------------------------------------------------------------------------------------*/
-int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
+int FilterIPv6Entries(MIB_TCP6TABLE2 *pTcpTable, int idx)
 {
     wchar_t ipstringbuffer[46];
     char RemoteAddress[256] = { '\0' };
@@ -261,7 +261,7 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: GetV6Connections
+ * Function: GetIPv6Connections
  * Get and fill the connection details with IPv6 details.
  *
  * Parameters:
@@ -274,7 +274,7 @@ int FilterEntryV6(MIB_TCP6TABLE2 *pTcpTable, int idx)
  * Fills ConnectionDetails will the details on the IPv4 connections.
  * 
  ---------------------------------------------------------------------------------------*/
-int GetV6Connections(void)
+int GetIPv6Connections(void)
 {
         // Declare and initialize variables
         PMIB_TCP6TABLE2  pTcpTable;
@@ -307,7 +307,7 @@ int GetV6Connections(void)
         // Make a second call to GetTcp6Table to get the actual data we require
         if ((dwRetVal = GetTcp6Table2(pTcpTable, &dwSize, TRUE)) == NO_ERROR) {
             for (i = 0; i < (int)pTcpTable->dwNumEntries; i++) {
-                if (FilterEntryV6(pTcpTable, i) == 0) 
+                if (FilterIPv6Entries(pTcpTable, i) == 0) 
                 {                   
                     ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));                    
                     if (ConnectionDetails == NULL) break;
@@ -357,7 +357,7 @@ int GetV6Connections(void)
                             break;
                     }
 
-                    FindProcessName((DWORD)pTcpTable->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
+                    GetProcessNameFromPID((DWORD)pTcpTable->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
                     sprintf_s(ConnectionDetails[NumberOfConnections].PID, sizeof(ConnectionDetails[NumberOfConnections].PID) - 1, "%d ", (DWORD)pTcpTable->table[i].dwOwningPid);
 
                     if (InetNtop(AF_INET6, &pTcpTable->table[i].LocalAddr, ipstringbuffer, 46) == NULL) {
@@ -400,7 +400,7 @@ int GetV6Connections(void)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: GetV4Connections
+ * Function: GetIPv4Connections
  * Get and process the IPv4 connection list.
  *
  * Parameters:
@@ -413,7 +413,7 @@ int GetV6Connections(void)
  * Fills ConnectionDetails will the details on the IPv4 connections.
  * 
  ---------------------------------------------------------------------------------------*/
-int GetV4Connections(void)
+int GetIPv4Connections(void)
 {
     // Declare and initialize variables.
     PMIB_TCPTABLE2 pTcpTable2;
@@ -449,7 +449,7 @@ int GetV4Connections(void)
     // Make a second call to GetTcpTable to get the actual data we require.
     if ((dwRetVal = GetTcpTable2(pTcpTable2, &ulSize, TRUE)) == NO_ERROR) {                
         for (i = 0; i < (int)pTcpTable2->dwNumEntries; i++) {
-            if (FilterEntryV4(pTcpTable2, i) == 0) {
+            if (FilterIPv4Entries(pTcpTable2, i) == 0) {
                 
                 ConnectionDetails = (ConnectionData*) realloc(ConnectionDetails, ((NumberOfConnections + 1) * sizeof(ConnectionData)));                
                 if (ConnectionDetails == NULL) break;
@@ -457,7 +457,7 @@ int GetV4Connections(void)
                 memset(&ConnectionDetails[NumberOfConnections], 0, sizeof(ConnectionDetails[NumberOfConnections]));
 
                 // Process Name.
-                FindProcessName((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
+                GetProcessNameFromPID((DWORD)pTcpTable2->table[i].dwOwningPid, ConnectionDetails[NumberOfConnections].Process);
 
                 // Display the Process PID.
                 sprintf_s(ConnectionDetails[NumberOfConnections].PID, sizeof(ConnectionDetails[NumberOfConnections].PID) - 1, "%d", (DWORD)pTcpTable2->table[i].dwOwningPid);
@@ -484,7 +484,7 @@ int GetV4Connections(void)
 
                 // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
                 if (config.DisableCountryLookup == 0 && COUNTRY_LOOKUP_DONE == 0) {
-                    LookupIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &COUNTRY_LOOKUP_DONE);                    
+                    LookupRemoteIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &COUNTRY_LOOKUP_DONE);                    
                     strcpy_s(ConnectionDetails[NumberOfConnections].Country, sizeof(ConnectionDetails[NumberOfConnections].Country) - 1, IP_Details.country);
                     strcpy_s(ConnectionDetails[NumberOfConnections].City, sizeof(ConnectionDetails[NumberOfConnections].City) - 1, IP_Details.city);
                     strcpy_s(ConnectionDetails[NumberOfConnections].ORG, sizeof(ConnectionDetails[NumberOfConnections].ORG) - 1, IP_Details.org);
@@ -573,9 +573,12 @@ int GetV4Connections(void)
  ---------------------------------------------------------------------------------------*/
 const char* GetPortDescription(int port) {
     int low = 0;
-    int high = 64;
+    int high = 0;
     int median = 0;
     
+    high = (sizeof(PortDescriptions) / sizeof(KeyValue));
+
+
     // Do a Binary search on the port description array.
     do {
         median = (low + high) / 2;
@@ -723,13 +726,13 @@ int cb_TimerTriggered(Ihandle *ih) {
     NumberOfConnections = 0;
 
     // Grab the IPv4 connections.
-    GetV4Connections();
+    GetIPv4Connections();
 
     // Grab the IPv6 connections.
-    // GetV6Connections();
+    GetIPv6Connections();
 
     // Fill the grid with connection details.
-    FillNetStatGrid();
+    FillNetworkStatusGrid();
     return IUP_DEFAULT;
 }
 
@@ -782,7 +785,7 @@ int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status)
         IupSetAttributeId(ih, "SORTCOLUMN", SortColumn, "ALL");
 		
 		// Refill the Grid
-        FillNetStatGrid();
+        FillNetworkStatusGrid();
 		
         return IUP_DEFAULT;
     }
@@ -795,15 +798,14 @@ int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status)
 		
 		// Store the current remote IP address for this line.
         strcpy_s(CurrentIP, sizeof(CurrentIP) - 1, (char *) IupGetAttributeId2(iGrid, "", lin, 6));
-                
         
-        // Stop the timer
+        // Stop the timer.
         IupSetAttribute(iTimer, "RUN", "NO");
 		
 		// Edit the column as text.
         IupSetAttribute(iGrid, "TYPE*:8", "TEXT");
         
-		// Make sure we can edit the grid
+		// Make sure we can edit the grid.
 		IupSetAttribute(iGrid, "READONLY", "NO");
 		
 		// Enter Edit mode.
@@ -839,16 +841,16 @@ int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status)
 void cb_mnuSettings(void) {
     int result;
    
-    loadSettings();
+    LoadApplicationsSettings();
 
     // Build up the dialog and show it.
     result = IupGetParam("Settings", NULL, 0,
-        "Hide Connections to 127.0.0.0 / 0.0.0.0 : %b\n"
+        "Hide 127.0.0.0 / 0.0.0.0 Connections : %b\n"
         "Disable IP Country Lookups : %b\n"
         "Hide Remote IP Description Column: %b\n"
         "Update Grid Every Secs: %i\n" 
         "Show Port Usage Descriptions: %b\n"
-        "Filter by Port Number : %b\n"
+        "Filter by Port Numbers : %b\n"
         "Port Filter List (Separated by commas) : %s\n"
         "Country Lookup Server : %s\n",
         &config.HideLocalConections,
@@ -863,8 +865,8 @@ void cb_mnuSettings(void) {
     
     // Okay was pressed so save the settings and refill the grid.
     if (result == 1) {
-        saveSettings();
-        FillNetStatGrid();
+        SaveApplicationsSettings();
+        FillNetworkStatusGrid();
     }
     return;
 }
@@ -872,7 +874,7 @@ void cb_mnuSettings(void) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: applySettings
+ * Function: ApplyApplicationsSettings
  * Apply the settings from the configuration file.
  *
  * Parameters:
@@ -882,7 +884,7 @@ void cb_mnuSettings(void) {
  *  void.
  *
  ---------------------------------------------------------------------------------------*/
-void applySettings(void)
+void ApplyApplicationsSettings(void)
 {
     
     if (config.HideDescriptionColumn == 1)
@@ -922,7 +924,7 @@ void applySettings(void)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: loadSettings
+ * Function: LoadApplicationsSettings
  * Load the settings from the configuration file.
  *
  * Parameters:
@@ -932,7 +934,7 @@ void applySettings(void)
  *  void.
  *
  ---------------------------------------------------------------------------------------*/
-void loadSettings(void) {    
+void LoadApplicationsSettings(void) {    
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableCountryLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
     config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 0);       
@@ -941,13 +943,13 @@ void loadSettings(void) {
     strcpy_s(config.PortFilter, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "PortFilter","\0"));
     strcpy_s(config.WhoIs, NI_MAXHOST, IupConfigGetVariableStrDef(iconfig, "NetStat", "LookupServer", "ipwho.is\0"));
     config.GridTimer = IupConfigGetVariableIntDef(iconfig, "NetStat", "GridTimer", 10);
-    applySettings();
+    ApplyApplicationsSettings();
 }
 
 
 
 /*---------------------------------------------------------------------------------------
- * Function: saveSettings
+ * Function: SaveApplicationsSettings
  * Save the applications settings to the configuration file.
  *
  * Parameters:
@@ -957,8 +959,7 @@ void loadSettings(void) {
  *  void.
  *
  ---------------------------------------------------------------------------------------*/
-void saveSettings(void) {
-    // Save the updated settings.
+void SaveApplicationsSettings(void) {
     IupConfigSetVariableInt(iconfig, "NetStat", "HideLocal", config.HideLocalConections);
     IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableCountryLookup);
     IupConfigSetVariableInt(iconfig, "NetStat", "ShowPortDescriptions", config.ShowPortDescriptions);
@@ -969,7 +970,7 @@ void saveSettings(void) {
     IupConfigSetVariableInt(iconfig, "NetStat", "GridTimer", config.GridTimer);
     
     IupConfigSave(iconfig);
-    applySettings();
+    ApplyApplicationsSettings();
 }
 
 
@@ -1012,7 +1013,7 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: FindProcessName
+ * Function: GetProcessNameFromPID
  * Finds the name of an executable given it's process ID.
  *
  * Parameters:
@@ -1022,7 +1023,7 @@ size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len) {
  *  Fills 'szProcessName' with the executables name.
  * 
  ---------------------------------------------------------------------------------------*/
-void FindProcessName( DWORD processID, char* szProcessName) {
+void GetProcessNameFromPID( DWORD processID, char* szProcessName) {
 	HANDLE hProcessSnap;
 	PROCESSENTRY32 pe32;
 
@@ -1064,7 +1065,7 @@ void FindProcessName( DWORD processID, char* szProcessName) {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: FillNetStatGrid
+ * Function: FillNetworkStatusGrid
  * Fills a list with the connection details.
  *
  * Parameters:
@@ -1074,7 +1075,7 @@ void FindProcessName( DWORD processID, char* szProcessName) {
  *  Status code
  * 
  ---------------------------------------------------------------------------------------*/
-int FillNetStatGrid() {
+int FillNetworkStatusGrid() {
 	int row = 0;
     static int lastcount = 0;
 
@@ -1114,8 +1115,6 @@ int FillNetStatGrid() {
 
     // Update the applications statusbar text.
     sprintf_s(sStatusBarText, sizeof(sStatusBarText) - 1, "Number of Entries : %d", NumberOfConnections);
-
-    if (config.DisableCountryLookup == 1) strcat_s(sStatusBarText, sizeof(sStatusBarText) - 1, " (Country Lookups Disabled.)");
     IupSetAttribute(iStatusbar, "TITLE", sStatusBarText);
 
     return 0;
@@ -1124,7 +1123,7 @@ int FillNetStatGrid() {
 
 
 /*---------------------------------------------------------------------------------------
- * Function: LookupIPDetails
+ * Function: LookupRemoteIPDetails
  * lookup details for the passed IP address.
  *
  * Notes:
@@ -1138,7 +1137,7 @@ int FillNetStatGrid() {
  *      Status code
  * 
  ---------------------------------------------------------------------------------------*/
-int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP_DONE) {    
+int LookupRemoteIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP_DONE) {    
     int Found = 0;
     char *strJSON = NULL;
     char buffer[1024] = { '\0' };
@@ -1149,7 +1148,7 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP
 
     memset(IP_Details, 0, sizeof(*IP_Details));
     
-    Found = SearchDatabase(IP, IP_Details);
+    Found = SearchDatabaseForIPDetails(IP, IP_Details);
     if (Found == 1) {
         *COUNTRY_LOOKUP_DONE = 0;
         return 0;
@@ -1180,7 +1179,6 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP
             const cJSON* org = cJSON_GetObjectItemCaseSensitive(connection, "org");
             const cJSON* isp = cJSON_GetObjectItemCaseSensitive(connection, "isp");
             const cJSON* domain = cJSON_GetObjectItemCaseSensitive(connection, "domain");
-
 
             sprintf_s(SQL, sizeof(SQL) - 1, "INSERT INTO tblKnownIPs (IP, Country, City, ORG, ISP, Domain, Latitude, Longitude) VALUES (?,?,?,?,?,?,?,?)");
             sqlite3_prepare_v2(DataBaseHandle, SQL, -1, &stmtIPDetails, 0);
@@ -1233,7 +1231,6 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP
 
             // Finalise the statement.
             sqlite3_finalize(stmtIPDetails);
-            
 
             memcpy(IP_Details->IP, ip->valuestring, sizeof(IP_Details->IP));
             memcpy(IP_Details->country, message->valuestring, sizeof(IP_Details->country));
@@ -1242,7 +1239,6 @@ int LookupIPDetails(char * IP, IPDetails_struct* IP_Details, int *COUNTRY_LOOKUP
             memcpy(IP_Details->isp, message->valuestring, sizeof(IP_Details->isp));
             memcpy(IP_Details->domain, message->valuestring, sizeof(IP_Details->domain));
         }
-
 
         // Close the database
         sqlite3_close(DataBaseHandle);
@@ -1311,7 +1307,7 @@ int FileExists(const char* filename)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: CreateDatabase
+ * Function: CreateDefaultDatabase
  * Creates a sqlite database to hold the applications settings
  *
  * Parameters:
@@ -1324,7 +1320,7 @@ int FileExists(const char* filename)
  * The database is created in the root of the users 'My Documents' folder.
  *
  ---------------------------------------------------------------------------------------*/
-void CreateDatabase(void)
+void CreateDefaultDatabase(void)
 {
     int rc = 0;
     char SQL[1024] = { '\0' };
@@ -1422,7 +1418,7 @@ void CreateDatabase(void)
 
 
 /*---------------------------------------------------------------------------------------
- * Function: SearchDatabase
+ * Function: SearchDatabaseForIPDetails
  * Search the database for details about the passed IP
  *
  * Parameters:
@@ -1433,7 +1429,7 @@ void CreateDatabase(void)
  * 1 = Details found, otherwise returns 0.
  *
  ---------------------------------------------------------------------------------------*/
-int SearchDatabase(char* IP, IPDetails_struct* IP_Details)
+int SearchDatabaseForIPDetails(char* IP, IPDetails_struct* IP_Details)
 {
     char buffer[1024] = { '\0' };
     char SQL[1024] = { '\0' };
@@ -1527,7 +1523,7 @@ int main(int argc, char* argv[]) {
     InitialiseWinsock();
 
     // Create the SQLite database
-    CreateDatabase();
+    CreateDefaultDatabase();
         
 
     // Setup the file menu.
@@ -1661,7 +1657,7 @@ int main(int argc, char* argv[]) {
     
     // Load the configuration settings.
     IupConfigLoad(iconfig);
-    loadSettings();
+    LoadApplicationsSettings();
 
 
     // Timer attributes.
@@ -1675,13 +1671,13 @@ int main(int argc, char* argv[]) {
     IupShow(iDialog);
 
     // Grab the IPv4 connections.
-    GetV4Connections();
+    GetIPv4Connections();
 
     // Grab the IPv6 connections.
-    //GetV6Connections();
+    GetIPv6Connections();
 
     // Fill the tcp details.
-    FillNetStatGrid();    
+    FillNetworkStatusGrid();    
 
     
     // IUP main loop.

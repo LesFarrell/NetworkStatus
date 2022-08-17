@@ -19,18 +19,18 @@ IPDetails_struct IP_Details;
 
 
 // Function protypes.
-int FillNetStatGrid();
-void FindProcessName( DWORD processID, char *szProcessName);
-int LookupIPDetails(char* IP, IPDetails_struct *IP_Details, int* COUNTRY_LOOKUP_DONE);
+int FillNetworkStatusGrid();
+void GetProcessNameFromPID( DWORD processID, char *szProcessName);
+int LookupRemoteIPDetails(char* IP, IPDetails_struct *IP_Details, int* COUNTRY_LOOKUP_DONE);
 int InitialiseWinsock();
 size_t to_narrow(const wchar_t* src, char* dest, size_t dest_len);
-void loadSettings(void);
-void saveSettings(void);
+void LoadApplicationsSettings(void);
+void SaveApplicationsSettings(void);
 const char* GetPortDescription(int port);
-int SearchDatabase(char* IP, IPDetails_struct* IP_Details);
-int GetV4Connections(void);
-int GetV6Connections(void);
-int GetV6Connections(void);
+int SearchDatabaseForIPDetails(char* IP, IPDetails_struct* IP_Details);
+int GetIPv4Connections(void);
+int GetIPv6Connections(void);
+int GetIPv6Connections(void);
 void cb_mnuAboutBox(void);
 int cb_TimerTriggered(Ihandle* ih);
 void cb_mnuSettings(void);
@@ -38,11 +38,11 @@ int cb_mnuExit(void);
 int cb_GridEnterCell(Ihandle* ih, int lin, int col);
 int cb_GridLeaveCell(Ihandle* ih, int lin, int col);
 int cb_GridValueChanged(Ihandle* ih);
-int FilterEntryV4(MIB_TCPTABLE2* pTcpTable2, int idx);
-int FilterEntryV6(MIB_TCP6TABLE2* pTcpTable, int idx);
-void CreateDatabase(void);
+int FilterIPv4Entries(MIB_TCPTABLE2* pTcpTable2, int idx);
+int FilterIPv6Entries(MIB_TCP6TABLE2* pTcpTable, int idx);
+void CreateDefaultDatabase(void);
 int FileExists(const char* filename);
-void applySettings(void);
+void ApplyApplicationsSettings(void);
 int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status);
 
 
@@ -118,12 +118,14 @@ const KeyValue PortDescriptions[] = {
     {1080, "(SOCKS)"},
     {1194, "(OPENVPN)"},
     {1234, "(VLC)"},
-    {1883, "(MQTT)"},
-    {2732, "(STEAM)"},
+    {1883, "(MQTT)"},    
+    {1900, "(SSDP)"},
+    {2732, "(STEAM)"},    
     {3306, "(MYSQL)"},
     {3301, "(SAP)"},
     {4070, "(Spotify)"},
-    {5000, "(UPNP)"},
+    {5000, "(UPNP)"},    
+    {5228, "(Google Play Store)"},
     {5655, "(Remote Utilities)"},
     {5800, "(VNC)"},
     {5900, "(VNC)"},
@@ -131,6 +133,8 @@ const KeyValue PortDescriptions[] = {
     {6196, "(AISWEB)"},
     {7680, "(Windows Update)"},
     {8080, "(HTTP)"},
+    {27019,"(STEAM)"},
+    {27028,"(STEAM)"},
 };
 
 
