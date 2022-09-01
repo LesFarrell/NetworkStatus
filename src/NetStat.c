@@ -285,6 +285,8 @@ int GetIPv6Connections(void)
         int i;
         int COUNTRY_LOOKUP_DONE = 0;
 
+        if (config.HideIPv6 == 1) return 0;
+
         pTcpTable = (MIB_TCP6TABLE2*)MALLOC(sizeof(MIB_TCP6TABLE2));
         if (pTcpTable == NULL) {
             fprintf(stderr,"Error allocating memory\n");
@@ -379,6 +381,20 @@ int GetIPv6Connections(void)
                     sprintf_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, "%d ", ntohs((u_short)pTcpTable->table[i].dwRemotePort));
                     
                     strcat_s(ConnectionDetails[NumberOfConnections].RemotePort, sizeof(ConnectionDetails[NumberOfConnections].RemotePort) - 1, GetPortDescription(atoi(ConnectionDetails[NumberOfConnections].RemotePort)));
+                
+                    
+                    // Only do the Reverse DNS if it's turned on and even then just do one lookup per call to this function, as it's a slow process.
+                    if (config.DisableCountryLookup == 0 && COUNTRY_LOOKUP_DONE == 0) {
+                        LookupRemoteIPDetails(ConnectionDetails[NumberOfConnections].RemoteAddress, &IP_Details, &COUNTRY_LOOKUP_DONE);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].Country, sizeof(ConnectionDetails[NumberOfConnections].Country) - 1, IP_Details.country);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].City, sizeof(ConnectionDetails[NumberOfConnections].City) - 1, IP_Details.city);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].ORG, sizeof(ConnectionDetails[NumberOfConnections].ORG) - 1, IP_Details.org);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].ISP, sizeof(ConnectionDetails[NumberOfConnections].ISP) - 1, IP_Details.isp);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].DOMAIN, sizeof(ConnectionDetails[NumberOfConnections].DOMAIN) - 1, IP_Details.domain);
+                        strcpy_s(ConnectionDetails[NumberOfConnections].Description, sizeof(ConnectionDetails[NumberOfConnections].Description) - 1, IP_Details.description);
+                    }
+                    
+                    
                     NumberOfConnections++;
                 }
             }
@@ -428,6 +444,8 @@ int GetIPv4Connections(void)
     int COUNTRY_LOOKUP_DONE = 0;
     char HostName[NI_MAXHOST] = { '\0' };
    
+    if (config.HideIPv4 == 1) return 0;
+
     pTcpTable2 = (MIB_TCPTABLE2*)MALLOC(sizeof(MIB_TCPTABLE2));
     if (pTcpTable2 == NULL) {
         fprintf(stderr,"Error allocating memory\n");
@@ -845,6 +863,8 @@ void cb_mnuSettings(void) {
 
     // Build up the dialog and show it.
     result = IupGetParam("Settings", NULL, 0,
+        "Hide IPv4 Connections : %b\n"
+        "Hide IPv6 Connections : %b\n"
         "Hide 127.0.0.0 / 0.0.0.0 Connections : %b\n"
         "Disable IP Country Lookups : %b\n"
         "Hide Remote IP Description Column: %b\n"
@@ -853,6 +873,8 @@ void cb_mnuSettings(void) {
         "Filter by Port Numbers : %b\n"
         "Port Filter List (Separated by commas) : %s\n"
         "Country Lookup Server : %s\n",
+        &config.HideIPv4,
+        &config.HideIPv6,
         &config.HideLocalConections,
         &config.DisableCountryLookup, 
         &config.HideDescriptionColumn,
@@ -866,7 +888,17 @@ void cb_mnuSettings(void) {
     // Okay was pressed so save the settings and refill the grid.
     if (result == 1) {
         SaveApplicationsSettings();
-        FillNetworkStatusGrid();
+
+        NumberOfConnections = 0;
+
+        // Grab the IPv4 connections.
+        GetIPv4Connections();
+
+        // Grab the IPv6 connections.
+        GetIPv6Connections();
+
+        // Fill the grid with connection details.
+        FillNetworkStatusGrid();        
     }
     return;
 }
@@ -935,6 +967,8 @@ void ApplyApplicationsSettings(void)
  *
  ---------------------------------------------------------------------------------------*/
 void LoadApplicationsSettings(void) {    
+    config.HideIPv4 = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideIPv4", 0);
+    config.HideIPv6 = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideIPv6", 1);
     config.HideLocalConections = IupConfigGetVariableIntDef(iconfig, "NetStat", "HideLocal", 1);
     config.DisableCountryLookup = IupConfigGetVariableIntDef(iconfig, "NetStat", "DisableDNS", 0);
     config.ShowPortDescriptions = IupConfigGetVariableIntDef(iconfig, "NetStat", "ShowPortDescriptions", 0);       
@@ -960,6 +994,8 @@ void LoadApplicationsSettings(void) {
  *
  ---------------------------------------------------------------------------------------*/
 void SaveApplicationsSettings(void) {
+    IupConfigSetVariableInt(iconfig, "NetStat", "HideIPv4", config.HideIPv4);
+    IupConfigSetVariableInt(iconfig, "NetStat", "HideIPv6", config.HideIPv6);
     IupConfigSetVariableInt(iconfig, "NetStat", "HideLocal", config.HideLocalConections);
     IupConfigSetVariableInt(iconfig, "NetStat", "DisableDNS", config.DisableCountryLookup);
     IupConfigSetVariableInt(iconfig, "NetStat", "ShowPortDescriptions", config.ShowPortDescriptions);
@@ -1081,7 +1117,7 @@ int FillNetworkStatusGrid() {
 
     // Set the number of visible lines in the grid.
     if (lastcount != NumberOfConnections) {
-        IupSetInt(iGrid, "NUMLIN", NumberOfConnections);
+        IupSetInt(iGrid, "NUMLIN", NumberOfConnections );
         lastcount = NumberOfConnections;
     }
 
@@ -1584,7 +1620,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "ALIGNMENT4", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 5, "Local Port");
-    IupSetAttribute(iGrid, "WIDTH5", "80");
+    IupSetAttribute(iGrid, "WIDTH5", "90");
     IupSetAttribute(iGrid, "ALIGNMENT5", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 6, "Remote Address");
@@ -1592,7 +1628,7 @@ int main(int argc, char* argv[]) {
     IupSetAttribute(iGrid, "ALIGNMENT6", "ALEFT");
 
     IupSetAttributeId2(iGrid, "", 0, 7, "Remote Port");    
-    IupSetAttribute(iGrid, "WIDTH7", "80");
+    IupSetAttribute(iGrid, "WIDTH7", "90");
     IupSetAttribute(iGrid, "ALIGNMENT7", "ALEFT");
     
     IupSetAttributeId2(iGrid, "", 0, 8, "Description of Remote IP");

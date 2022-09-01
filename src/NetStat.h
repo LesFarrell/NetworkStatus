@@ -47,6 +47,8 @@ int cb_GridClickCell(Ihandle* ih, int lin, int col, char* status);
 
 
 typedef struct configuration {
+    int HideIPv4;
+    int HideIPv6;
     int HideLocalConections;
     int DisableCountryLookup;
     int HideDescriptionColumn;

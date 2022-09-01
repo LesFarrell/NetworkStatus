@@ -1,42 +1,42 @@
-workspace "Netstat"
-        location("Build")
-        configurations { "Debug", "Release" }
-        platforms { "Win64", "Win32" }
+workspace	"Network Status"
+			location("Build")
+			configurations { "Debug", "Release" }
+			platforms { "Win32" }
 
-project "Netstat"
-        language "C++"
-        targetdir "%{cfg.location}/bin/%{cfg.buildcfg}"
+project 	"Network Status"
+			language "C++"
+			targetdir "%{cfg.location}/bin/%{cfg.buildcfg}"
 
-        includedirs{
+			includedirs{
                         "./include",
                         "./3rdparty/iup/include",
                         "./3rdparty/cd/include",
                         "./3rdparty/im/include",
                         "./3rdparty/sqlite3/",
                         "./3rdparty/cjson/",
-                }
+					}
 
-        libdirs {
+			libdirs {
                         "./3rdparty/iup",
                         "./3rdparty/cd",
                         "./3rdparty/im",
                         "./3rdparty/sqlite3/",
-                }
+					}
 
-        files   {
+			files   {
                         "./src/**.h",
                         "./src/**.c",
                         "./src/**.rc",
                         "./3rdparty/sqlite3/sqlite3.c",
                         "./3rdparty/cjson/cjson.c",
-                }
-
-		removefiles {
-						"./src/*(1).c",
 					}
 
+			removefiles {
+						"./src/*(1).c",
+						}
 
-        links   {
+
+			links   {
 -- System
                         "user32",
                         "comdlg32",
@@ -80,7 +80,7 @@ project "Netstat"
                         "ftgl",
                         "pdflib",
                         "zlib1",
-                }
+					}
 
 
 
